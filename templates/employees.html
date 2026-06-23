@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Employees</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+
+<body>
+
+<div class="navbar">
+    <a href="/">Home</a>
+    <a href="/employees">Employees</a>
+    <a href="/contact">Contact</a>
+</div>
+
+<div class="container">
+    <h2>Employee Directory</h2>
+
+    {% for employee in employees %}
+    <div class="card">
+        <h3>{{ employee.name }}</h3>
+        <p>{{ employee.role }}</p>
+        <a class="button" href="/profile/{{ employee.id }}">View Profile</a>
+    </div>
+    {% endfor %}
+
+</div>
+
+</body>
+</html>

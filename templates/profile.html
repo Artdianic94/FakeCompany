@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Profile</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+
+<body>
+
+<div class="navbar">
+    <a href="/">Home</a>
+    <a href="/employees">Employees</a>
+    <a href="/contact">Contact</a>
+</div>
+
+<div class="container">
+
+    <div class="card">
+        <h2>{{ employee.name }}</h2>
+        <p><b>Role:</b> {{ employee.role }}</p>
+        <p><b>Email:</b> {{ employee.email }}</p>
+    </div>
+
+</div>
+
+</body>
+</html>
