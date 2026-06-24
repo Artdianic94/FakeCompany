@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}FakeCompany{% endblock %} — Internal Portal</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    <header class="site-header">
+        <div class="header-inner">
+            <a href="{{ url_for('home') if current_user else url_for('login') }}" class="brand">
+                <span class="brand-mark">FC</span>
+                <span class="brand-text">
+                    <strong>FakeCompany</strong>
+                    <small>Employee Portal</small>
+                </span>
+            </a>
+
+            {% if current_user %}
+            <nav class="main-nav">
+                <a href="{{ url_for('home') }}" class="{% if request.endpoint == 'home' %}active{% endif %}">Dashboard</a>
+                <a href="{{ url_for('employee_list') }}" class="{% if request.endpoint in ('employee_list', 'profile') %}active{% endif %}">Directory</a>
+                <a href="{{ url_for('contact') }}" class="{% if request.endpoint == 'contact' %}active{% endif %}">Feedback</a>
+                {% if current_user.role == 'admin' %}
+                <a href="{{ url_for('admin') }}" class="nav-admin {% if request.endpoint and request.endpoint.startswith('admin') %}active{% endif %}">Admin</a>
+                {% endif %}
+            </nav>
+
+            <div class="user-menu">
+                <span class="user-badge">
+                    <span class="user-avatar">{{ current_user.username[0]|upper }}</span>
+                    <span>
+                        {{ current_user.username }}
+                        <small>{{ current_user.role }}</small>
+                    </span>
+                </span>
+                <a href="{{ url_for('logout') }}" class="btn btn-ghost btn-sm">Sign out</a>
+            </div>
+            {% else %}
+            <nav class="main-nav">
+                <a href="{{ url_for('about') }}">About</a>
+                <a href="{{ url_for('contact') }}">Contact</a>
+            </nav>
+            <a href="{{ url_for('login') }}" class="btn btn-primary btn-sm">Sign in</a>
+            {% endif %}
+        </div>
+    </header>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="flash-container">
+        {% for category, message in messages %}
+        <div class="flash flash-{{ category }}">{{ message }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% endwith %}
+
+    <main class="main-content">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="site-footer">
+        <div class="footer-inner">
+            <p>&copy; 2026 FakeCompany Ltd. Internal use only.</p>
+            <p class="footer-meta">IT Service Desk: helpdesk@fakecompany.local · ext. 4200</p>
+        </div>
+    </footer>
+
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>

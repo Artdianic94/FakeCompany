@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}HR Record{% endblock %}
+
+{% block content %}
+<section class="page-header">
+    <a href="{{ url_for('employee_list') }}" class="back-link">&larr; Back to directory</a>
+    {% if employee %}
+    <p class="eyebrow">Confidential — HR Only</p>
+    <h1>HR Record: {{ employee.name }}</h1>
+    <p class="page-lead">Employee ID #{{ employee.id }} · Restricted personnel file</p>
+    {% else %}
+    <h1>Record not found</h1>
+    {% endif %}
+</section>
+
+{% if employee and record %}
+<section class="section">
+    <div class="profile-card profile-card-sensitive">
+        <div class="sensitive-banner">
+            <span>🔒</span> This document contains PII and is subject to GDPR retention policies.
+        </div>
+        <dl class="detail-list detail-list-wide">
+            <div>
+                <dt>Annual salary</dt>
+                <dd class="mono">{{ record.salary }}</dd>
+            </div>
+            <div>
+                <dt>Social Security Number</dt>
+                <dd class="mono">{{ record.ssn }}</dd>
+            </div>
+            <div>
+                <dt>Home address</dt>
+                <dd>{{ record.personal_address }}</dd>
+            </div>
+            <div>
+                <dt>Internal notes</dt>
+                <dd class="notes-block">{{ record.internal_notes }}</dd>
+            </div>
+        </dl>
+    </div>
+</section>
+{% elif employee %}
+<section class="section">
+    <div class="empty-state">No HR record found for this employee.</div>
+</section>
+{% endif %}
+{% endblock %}

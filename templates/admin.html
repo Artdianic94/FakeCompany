@@ -1,8 +1,46 @@
-<h1>Admin Dashboard</h1>
+{% extends "base.html" %}
 
-<p>Internal management panel</p>
+{% block title %}Administration{% endblock %}
 
-<ul>
-<li><a href="/search?username=admin">User Search</a></li>
-<li><a href="/employees">Employees</a></li>
-</ul>
+{% block content %}
+<section class="page-header">
+    <p class="eyebrow">Administration</p>
+    <h1>Admin Dashboard</h1>
+    <p class="page-lead">Internal management panel for portal administrators.</p>
+</section>
+
+<section class="section">
+    <div class="grid grid-3">
+        <a href="{{ url_for('contact') }}" class="action-card action-card-accent">
+            <div class="action-icon">📬</div>
+            <h3>Feedback Inbox</h3>
+            <p>
+                Review employee submissions.
+                {% if unread_count %}
+                <span class="badge badge-alert">{{ unread_count }} message{{ 's' if unread_count != 1 }}</span>
+                {% endif %}
+            </p>
+        </a>
+        <a href="{{ url_for('admin_search') }}" class="action-card">
+            <div class="action-icon">🔍</div>
+            <h3>User Search</h3>
+            <p>Look up accounts in the corporate user database by username.</p>
+        </a>
+        <a href="{{ url_for('admin_change_password') }}" class="action-card">
+            <div class="action-icon">🔑</div>
+            <h3>Account Security</h3>
+            <p>Change your administrator password and security settings.</p>
+        </a>
+    </div>
+</section>
+
+<section class="section">
+    <div class="notice-card notice-card-warning">
+        <h3>Administrator notice</h3>
+        <p>
+            You are responsible for reviewing all feedback messages promptly.
+            Unread submissions may contain time-sensitive security reports from staff.
+        </p>
+    </div>
+</section>
+{% endblock %}

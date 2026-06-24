@@ -1,27 +1,51 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Profile</title>
-    <link rel="stylesheet" href="/static/css/style.css">
-</head>
+{% extends "base.html" %}
 
-<body>
+{% block title %}{{ employee.name if employee else 'Profile' }}{% endblock %}
 
-<div class="navbar">
-    <a href="/">Home</a>
-    <a href="/employees">Employees</a>
-    <a href="/contact">Contact</a>
-</div>
+{% block content %}
+<section class="page-header">
+    <a href="{{ url_for('employee_list') }}" class="back-link">&larr; Back to directory</a>
+    {% if employee %}
+    <h1>{{ employee.name }}</h1>
+    <p class="page-lead">Public employee profile</p>
+    {% else %}
+    <h1>Employee not found</h1>
+    <p class="page-lead">No profile exists for this ID.</p>
+    {% endif %}
+</section>
 
-<div class="container">
-
-    <div class="card">
-        <h2>{{ employee.name }}</h2>
-        <p><b>Role:</b> {{ employee.role }}</p>
-        <p><b>Email:</b> {{ employee.email }}</p>
+{% if employee %}
+<section class="section">
+    <div class="profile-card">
+        <div class="profile-header">
+            <div class="employee-avatar employee-avatar-lg">
+                {{ employee.name.split()[0][0] }}{{ employee.name.split()[-1][0] }}
+            </div>
+            <div>
+                <h2>{{ employee.name }}</h2>
+                <p class="employee-role">{{ employee.role }}</p>
+            </div>
+        </div>
+        <dl class="detail-list">
+            <div>
+                <dt>Department</dt>
+                <dd>{{ employee.department }}</dd>
+            </div>
+            <div>
+                <dt>Email</dt>
+                <dd><a href="mailto:{{ employee.email }}">{{ employee.email }}</a></dd>
+            </div>
+            <div>
+                <dt>Employee ID</dt>
+                <dd>#{{ employee.id }}</dd>
+            </div>
+        </dl>
+        {% if current_user %}
+        <a href="{{ url_for('hr_record', employee_id=employee.id) }}" class="btn btn-primary">
+            View confidential HR record
+        </a>
+        {% endif %}
     </div>
-
-</div>
-
-</body>
-</html>
+</section>
+{% endif %}
+{% endblock %}

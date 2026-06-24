@@ -1,32 +1,50 @@
-<!DOCTYPE html>
-<html>
-<head>
-<title>Login</title>
-</head>
+{% extends "base.html" %}
 
-<body>
+{% block title %}Sign in{% endblock %}
 
-<h2>Employee Login</h2>
+{% block content %}
+<div class="auth-layout">
+    <div class="auth-panel">
+        <div class="auth-brand">
+            <span class="brand-mark brand-mark-lg">FC</span>
+            <h1>Sign in to FakeCompany</h1>
+            <p>Use your corporate credentials to access the internal employee portal.</p>
+        </div>
 
-<form method="POST">
+        <form method="POST" class="auth-form">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" placeholder="e.g. guest" required autofocus>
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" placeholder="••••••••" required>
+            </div>
+            <button type="submit" class="btn btn-primary btn-block">Sign in</button>
+        </form>
 
-Username:
-<input type="text" name="username">
+        <div class="auth-hint">
+            <p><strong>Demo accounts</strong> (for lab environment only):</p>
+            <ul>
+                <li><code>guest</code> / <code>guest123</code> — limited access</li>
+                <li><code>admin</code> / <code>admin123</code> — administrator</li>
+            </ul>
+        </div>
+    </div>
 
-<br><br>
-
-Password:
-<input type="password" name="password">
-
-<br><br>
-
-<input type="submit" value="Login">
-
-</form>
-
-<p>{{ error }}</p>
-
-<a href="/">Back</a>
-
-</body>
-</html>
+    <div class="auth-aside">
+        <div class="auth-aside-content">
+            <h2>Secure workplace,<br>connected teams.</h2>
+            <p>
+                FakeCompany portal centralizes HR workflows, internal communications,
+                and employee self-service in one place.
+            </p>
+            <ul class="feature-list">
+                <li>Employee directory &amp; profiles</li>
+                <li>Internal feedback channel</li>
+                <li>Role-based access control</li>
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}

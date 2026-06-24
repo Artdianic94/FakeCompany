@@ -1,131 +1,329 @@
-from flask import Flask, render_template, request, redirect, make_response, session
+import os
 import sqlite3
+from datetime import datetime
+
+from flask import Flask, flash, g, redirect, render_template, request, session, url_for
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "fakecompany-secret-key-change-in-prod")
 
-app.secret_key = "fakecompany-secret"
+DATABASE = os.environ.get("DATABASE_PATH", "fakecompany.db")
 
-employees = [
-    {"id": 1, "name": "Diana Petrova", "role": "Security Analyst", "email": "diana@fakecompany.local"},
-    {"id": 2, "name": "Alex Ivanov", "role": "System Administrator", "email": "alex@fakecompany.local"},
-    {"id": 3, "name": "Maria Sokolova", "role": "HR Manager", "email": "maria@fakecompany.local"}
-]
-
-messages = []
-
-users = {
-    "guest":{
-        "password":"guest123",
-        "role":"guest"
+PUBLIC_EMPLOYEES = [
+    {
+        "id": 1,
+        "name": "Diana Petrova",
+        "role": "Security Analyst",
+        "email": "diana@fakecompany.local",
+        "department": "Information Security",
     },
-
-    "admin":{
-        "password":"admin123",
-        "role":"admin"
-    }
-}
-@app.route("/")
-def home():
-
-    if "user" not in session:
-        return redirect("/login")
-
-    return render_template("index.html")
-
-
-@app.route("/login", methods=["GET","POST"])
-def login():
-
-    error=None
-
-    if request.method=="POST":
-
-        username=request.form["username"]
-        password=request.form["password"]
-
-        if username in users:
-
-            if users[username]["password"]==password:
-
-                session["user"]=username
-                session["role"]=users[username]["role"]
-
-                return redirect("/")
-
-        error="Invalid credentials"
-
-    return render_template("login.html",error=error)
-
-
-@app.route("/employees")
-def employee_list():
-
-    if "user" not in session:
-        return redirect("/login")
-
-    return render_template("employees.html", employees=employees)
-
-
-@app.route("/profile/<int:id>")
-def profile(id):
-
-    employee = None
-
-    for e in employees:
-        if e["id"] == id:
-            employee = e
-
-    return render_template(
-        "profile.html",
-        employee=employee
-    )
-
-@app.route("/admin")
-def admin():
-
-    if "role" not in session:
-        return "Login required"
-
-    if session["role"]!="admin":
-        return "Access denied"
-
-    return render_template("admin.html")
-
-@app.route("/contact", methods=["GET","POST"])
-def contact():
-
-    if request.method == "POST":
-
-        message = request.form["message"]
-        messages.append(message)
-
-    return render_template(
-        "contact.html",
-        messages=messages
-    )
+    {
+        "id": 2,
+        "name": "Alex Ivanov",
+        "role": "System Administrator",
+        "email": "alex@fakecompany.local",
+        "department": "IT Operations",
+    },
+    {
+        "id": 3,
+        "name": "Maria Sokolova",
+        "role": "HR Manager",
+        "email": "maria@fakecompany.local",
+        "department": "Human Resources",
+    },
+]
 
 
 def get_db():
-    conn = sqlite3.connect("fakecompany.db")
-    return conn
+    if "db" not in g:
+        g.db = sqlite3.connect(DATABASE)
+        g.db.row_factory = sqlite3.Row
+    return g.db
 
-@app.route("/search")
-def search():
 
-    if "role" not in session or session["role"] != "admin":
-        return "Access denied"
+@app.teardown_appcontext
+def close_db(_error):
+    db = g.pop("db", None)
+    if db is not None:
+        db.close()
 
-    username = request.args.get("username")
 
-    conn = sqlite3.connect("fakecompany.db")
-    cursor = conn.cursor()
+def _ensure_column(cursor, table, column, definition):
+    cursor.execute(f"PRAGMA table_info({table})")
+    columns = {row[1] for row in cursor.fetchall()}
+    if column not in columns:
+        cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
-    query = f"SELECT * FROM users WHERE username = '{username}'"
 
-    cursor.execute(query)
-    result = cursor.fetchall()
+def init_db():
+    db = sqlite3.connect(DATABASE)
+    db.row_factory = sqlite3.Row
+    cursor = db.cursor()
 
-    return {"result": result}
-    
+    cursor.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            role TEXT NOT NULL,
+            email TEXT,
+            employee_id INTEGER
+        );
+
+        CREATE TABLE IF NOT EXISTS contact_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            author TEXT,
+            message TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS hr_records (
+            employee_id INTEGER PRIMARY KEY,
+            salary TEXT,
+            ssn TEXT,
+            internal_notes TEXT,
+            personal_address TEXT
+        );
+        """
+    )
+
+    _ensure_column(cursor, "users", "email", "TEXT")
+    _ensure_column(cursor, "users", "employee_id", "INTEGER")
+    db.commit()
+
+    seed_users = [
+        ("guest", "guest123", "guest", "guest@fakecompany.local", None),
+        ("admin", "admin123", "admin", "admin@fakecompany.local", None),
+        ("diana", "diana2024!", "employee", "diana@fakecompany.local", 1),
+        ("alex", "sysadmin99", "employee", "alex@fakecompany.local", 2),
+        ("maria", "hr_secure1", "employee", "maria@fakecompany.local", 3),
+    ]
+    for username, password, role, email, employee_id in seed_users:
+        existing = cursor.execute(
+            "SELECT id FROM users WHERE username = ?", (username,)
+        ).fetchone()
+        if existing:
+            cursor.execute(
+                """
+                UPDATE users
+                SET password = ?, role = ?, email = ?, employee_id = ?
+                WHERE username = ?
+                """,
+                (password, role, email, employee_id, username),
+            )
+        else:
+            cursor.execute(
+                """
+                INSERT INTO users (username, password, role, email, employee_id)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (username, password, role, email, employee_id),
+            )
+
+    seed_hr = [
+        (1, "$94,500", "482-91-7734", "Completed SOC2 audit Q3. VPN access: tier-2.", "14 Oak Street, Suite 4B"),
+        (2, "$112,000", "591-22-8841", "Domain admin credentials in KeePass vault srv-01.", "88 River Road, Apt 12"),
+        (3, "$87,200", "403-55-9920", "Pending background check for contractor batch #7.", "3 Maple Lane"),
+    ]
+    for record in seed_hr:
+        cursor.execute(
+            """
+            INSERT OR IGNORE INTO hr_records
+            (employee_id, salary, ssn, internal_notes, personal_address)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            record,
+        )
+
+    db.commit()
+
+    employee_map = {"diana": 1, "alex": 2, "maria": 3}
+    for username, employee_id in employee_map.items():
+        cursor.execute(
+            "UPDATE users SET employee_id = ? WHERE username = ?",
+            (employee_id, username),
+        )
+
+    db.commit()
+    db.close()
+
+
+def current_user():
+    username = session.get("user")
+    if not username:
+        return None
+    db = get_db()
+    return db.execute(
+        "SELECT id, username, role, email, employee_id FROM users WHERE username = ?",
+        (username,),
+    ).fetchone()
+
+
+def login_required(view):
+    def wrapped(*args, **kwargs):
+        if "user" not in session:
+            return redirect(url_for("login", next=request.path))
+        return view(*args, **kwargs)
+
+    wrapped.__name__ = view.__name__
+    return wrapped
+
+
+def admin_required(view):
+    @login_required
+    def wrapped(*args, **kwargs):
+        if session.get("role") != "admin":
+            flash("Administrator privileges required.", "error")
+            return redirect(url_for("home"))
+        return view(*args, **kwargs)
+
+    wrapped.__name__ = view.__name__
+    return wrapped
+
+
+@app.context_processor
+def inject_globals():
+    return {"current_user": current_user()}
+
+
+@app.route("/")
+@login_required
+def home():
+    return render_template("index.html")
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+
+        user = get_db().execute(
+            "SELECT username, password, role FROM users WHERE username = ?",
+            (username,),
+        ).fetchone()
+
+        if user and user["password"] == password:
+            session["user"] = user["username"]
+            session["role"] = user["role"]
+            next_url = request.args.get("next") or url_for("home")
+            return redirect(next_url)
+
+        flash("Invalid username or password.", "error")
+
+    return render_template("login.html")
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    flash("You have been signed out.", "success")
+    return redirect(url_for("login"))
+
+
+@app.route("/employees")
+@login_required
+def employee_list():
+    return render_template("employees.html", employees=PUBLIC_EMPLOYEES)
+
+
+@app.route("/profile/<int:employee_id>")
+def profile(employee_id):
+    employee = next((e for e in PUBLIC_EMPLOYEES if e["id"] == employee_id), None)
+    return render_template("profile.html", employee=employee)
+
+
+@app.route("/hr/record/<int:employee_id>")
+@login_required
+def hr_record(employee_id):
+    record = get_db().execute(
+        """
+        SELECT employee_id, salary, ssn, internal_notes, personal_address
+        FROM hr_records WHERE employee_id = ?
+        """,
+        (employee_id,),
+    ).fetchone()
+    employee = next((e for e in PUBLIC_EMPLOYEES if e["id"] == employee_id), None)
+    return render_template("hr_record.html", employee=employee, record=record)
+
+
+@app.route("/contact", methods=["GET", "POST"])
+def contact():
+    if request.method == "POST":
+        message = request.form.get("message", "").strip()
+        author = session.get("user", "Anonymous")
+        if message:
+            get_db().execute(
+                "INSERT INTO contact_messages (author, message, created_at) VALUES (?, ?, ?)",
+                (author, message, datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")),
+            )
+            get_db().commit()
+            flash("Thank you — your message has been submitted.", "success")
+            return redirect(url_for("contact"))
+
+    messages = get_db().execute(
+        "SELECT author, message, created_at FROM contact_messages ORDER BY id DESC"
+    ).fetchall()
+
+    return render_template("contact.html", messages=messages)
+
+
+@app.route("/admin")
+@admin_required
+def admin():
+    unread = get_db().execute("SELECT COUNT(*) AS count FROM contact_messages").fetchone()["count"]
+    return render_template("admin.html", unread_count=unread)
+
+
+@app.route("/admin/search", methods=["GET", "POST"])
+@admin_required
+def admin_search():
+    results = None
+    query_display = ""
+    username = request.values.get("username", "")
+
+    if username:
+        query_display = f"SELECT * FROM users WHERE username = '{username}'"
+        cursor = get_db().cursor()
+        cursor.execute(query_display)
+        results = cursor.fetchall()
+
+    return render_template(
+        "admin_search.html",
+        results=results,
+        username=username,
+        query_display=query_display,
+    )
+
+
+@app.route("/admin/settings/password", methods=["GET", "POST"])
+@admin_required
+def admin_change_password():
+    if request.method == "POST":
+        new_password = request.form.get("new_password", "")
+        confirm_password = request.form.get("confirm_password", "")
+
+        if not new_password or new_password != confirm_password:
+            flash("Passwords do not match.", "error")
+        else:
+            get_db().execute(
+                "UPDATE users SET password = ? WHERE username = ?",
+                (new_password, session["user"]),
+            )
+            get_db().commit()
+            flash("Password updated successfully.", "success")
+            return redirect(url_for("admin"))
+
+    return render_template("admin_password.html")
+
+
+@app.route("/about")
+def about():
+    return render_template("about.html")
+
+
+init_db()
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=os.environ.get("FLASK_DEBUG", "1") == "1")

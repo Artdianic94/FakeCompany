@@ -1,30 +1,31 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Employees</title>
-    <link rel="stylesheet" href="/static/css/style.css">
-</head>
+{% extends "base.html" %}
 
-<body>
+{% block title %}Employee Directory{% endblock %}
 
-<div class="navbar">
-    <a href="/">Home</a>
-    <a href="/employees">Employees</a>
-    <a href="/contact">Contact</a>
-</div>
+{% block content %}
+<section class="page-header">
+    <p class="eyebrow">People &amp; Culture</p>
+    <h1>Employee Directory</h1>
+    <p class="page-lead">Public profiles for all FakeCompany staff members.</p>
+</section>
 
-<div class="container">
-    <h2>Employee Directory</h2>
-
-    {% for employee in employees %}
-    <div class="card">
-        <h3>{{ employee.name }}</h3>
-        <p>{{ employee.role }}</p>
-        <a class="button" href="/profile/{{ employee.id }}">View Profile</a>
+<section class="section">
+    <div class="grid grid-3">
+        {% for employee in employees %}
+        <article class="employee-card">
+            <div class="employee-avatar">{{ employee.name.split()[0][0] }}{{ employee.name.split()[-1][0] }}</div>
+            <h3>{{ employee.name }}</h3>
+            <p class="employee-role">{{ employee.role }}</p>
+            <p class="employee-dept">{{ employee.department }}</p>
+            <p class="employee-email">{{ employee.email }}</p>
+            <div class="card-actions">
+                <a href="{{ url_for('profile', employee_id=employee.id) }}" class="btn btn-secondary btn-sm">Public profile</a>
+                {% if current_user %}
+                <a href="{{ url_for('hr_record', employee_id=employee.id) }}" class="btn btn-ghost btn-sm">HR record</a>
+                {% endif %}
+            </div>
+        </article>
+        {% endfor %}
     </div>
-    {% endfor %}
-
-</div>
-
-</body>
-</html>
+</section>
+{% endblock %}

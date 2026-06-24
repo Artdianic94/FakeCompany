@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block title %}About{% endblock %}
+
+{% block content %}
+<section class="page-header">
+    <p class="eyebrow">Company</p>
+    <h1>About FakeCompany</h1>
+    <p class="page-lead">A fictional technology company built for cybersecurity education.</p>
+</section>
+
+<section class="section">
+    <div class="profile-card">
+        <h2>Our mission</h2>
+        <p>
+            FakeCompany simulates a realistic corporate intranet used in red-team penetration
+            testing exercises. The portal provides HR workflows, employee directories, and
+            administrative tools — intentionally containing security weaknesses for hands-on
+            learning.
+        </p>
+        <h2>Portal features</h2>
+        <ul class="feature-list feature-list-dark">
+            <li>Role-based employee portal (guest, employee, admin)</li>
+            <li>Internal feedback and communications channel</li>
+            <li>HR record management with confidential personnel data</li>
+            <li>Administrator user search and account settings</li>
+        </ul>
+    </div>
+</section>
+{% endblock %}
