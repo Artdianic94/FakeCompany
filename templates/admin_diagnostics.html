@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}Network Diagnostics{% endblock %}
+
+{% block content %}
+<section class="page-header">
+    <a href="{{ url_for('admin') }}" class="back-link">&larr; Admin dashboard</a>
+    <p class="eyebrow">IT Operations</p>
+    <h1>Network Diagnostics</h1>
+    <p class="page-lead">Ping internal or external hosts to verify connectivity from the portal server.</p>
+</section>
+
+<section class="section">
+    <div class="form-card form-card-narrow">
+        <form method="POST" class="stack-form">
+            <div class="form-group">
+                <label for="host">Target host or IP</label>
+                <input type="text" id="host" name="host" value="{{ host }}" placeholder="10.0.0.1" required>
+            </div>
+            <button type="submit" class="btn btn-primary">Run ping test</button>
+        </form>
+    </div>
+
+    {% if output is not none %}
+    <div class="code-panel">
+        <span class="code-label">Command output</span>
+        <pre class="code-block">{{ output }}</pre>
+    </div>
+    {% endif %}
+</section>
+{% endblock %}

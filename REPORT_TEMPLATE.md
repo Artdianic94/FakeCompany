@@ -116,7 +116,7 @@ Testing aligned with **OWASP WSTG** phases:
 |----------|------|-----------------|
 | `guest` | guest | Initial foothold, XSS injection |
 | `admin` | admin | Victim session for XSS/CSRF chain |
-| `admin` (after takeover) | admin | HR file review, SQLi, PII unlock |
+| `admin` (after takeover) | admin | SQLi, PII unlock, command injection |
 
 ---
 
@@ -124,7 +124,7 @@ Testing aligned with **OWASP WSTG** phases:
 
 `[Narrative paragraph describing the full kill chain — this is what elevates the report above isolated findings.]`
 
-Starting with a **guest** account, the tester submitted a malicious payload to the public feedback form. When an **administrator** reviewed messages, the stored script changed the admin password via an unprotected POST endpoint. After authenticating as admin, the tester opened an employee HR file from the admin dashboard — obtaining only contact details while PII remained locked behind an HR access code. **SQL injection** in Account Lookup extracted `pii_access_code` values from the `hr_records` table. The tester entered the stolen code on the HR file page and unlocked salary, SSN, and internal notes for the target employee.
+Starting with a **guest** account, the tester submitted stored XSS to the feedback form. When the administrator reviewed messages, the script changed the admin password (CSRF). After authenticating as admin, the tester used **SQL injection** to extract HR PII access codes and unlocked confidential personnel records. The tester then exploited **OS command injection** in Network Diagnostics to execute arbitrary commands on the server — escalating from application data breach to host compromise.
 
 ```
 Guest account
@@ -141,7 +141,9 @@ Admin → Open HR file → contact info only, PII locked
       ↓
 SQL Injection → extract pii_access_code from hr_records
       ↓
-Enter stolen code → salary, SSN, internal notes revealed
+Enter code on HR file → salary, SSN, internal notes
+      ↓
+Command Injection on /admin/diagnostics → OS-level access
 ```
 
 ---
@@ -154,7 +156,7 @@ Enter stolen code → salary, SSN, internal notes revealed
 | F-02 | Cross-Site Request Forgery (CSRF) on Password Change | High | `[8.1]` | A01 Broken Access Control | Client-side |
 | F-03 | Clickjacking — Missing Frame Protection | Medium | `[4.3]` | A01 Broken Access Control | Client-side |
 | F-04 | SQL Injection in Account Lookup | Critical | `[9.8]` | A03 Injection | Server-side |
-| F-05 | PII Exposure via Leaked HR Access Codes | High | `[7.5]` | A01 Broken Access Control | Server-side |
+| F-05 | OS Command Injection in Network Diagnostics | Critical | `[9.1]` | A03 Injection | Server-side |
 
 > Adjust CVSS scores after calculating with the [FIRST CVSS v3.1 Calculator](https://www.first.org/cvss/calculator/3.1).
 
@@ -472,56 +474,68 @@ cursor.execute(
 
 ---
 
-### F-05 — PII Exposure via Leaked HR Access Codes
+### F-05 — OS Command Injection in Network Diagnostics
 
 | Field | Value |
 |-------|-------|
-| **Severity** | High |
-| **CVSS v3.1** | 7.5 — `CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:N/A:N` |
-| **OWASP** | A01 — Broken Access Control |
-| **WSTG** | WSTG-ATHN-05 (Testing for Weak Security Question/Answer) / defense-in-depth failure |
+| **Severity** | Critical |
+| **CVSS v3.1** | 9.1 — `CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:C/C:H/I:H/A:H` |
+| **OWASP** | A03 — Injection |
+| **WSTG** | WSTG-INPV-12 (Testing for Command Injection) |
 | **Type** | Server-side |
 
 #### Description
 
-Employee HR files at `/admin/hr/<employee_id>` show contact information to administrators but gate PII (salary, SSN, internal notes) behind an HR access code. The codes are stored in plaintext in `hr_records.pii_access_code`. Combined with SQL injection (F-04), an attacker can obtain the code and unlock the confidential section — rendering the access control meaningless.
+The Network Diagnostics feature at `/admin/diagnostics` passes user-supplied host values directly into a shell command (`ping -c 3 {host}` with `shell=True`). An attacker with admin access can inject shell metacharacters to execute arbitrary OS commands on the portal server.
 
 #### Location
 
-- **Endpoint:** `GET/POST /admin/hr/<employee_id>`
-- **Parameter:** `access_code` (POST form)
-- **Secret storage:** `hr_records.pii_access_code` column
+- **Endpoint:** `POST /admin/diagnostics`
+- **Parameter:** `host`
+- **Vulnerable pattern:** `subprocess.check_output(f"ping -c 3 {host}", shell=True)`
 
 #### How It Was Found
 
-1. As admin, opened **Employee HR files → Alex Ivanov** — saw phone/extension only; PII form displayed
-2. SQL injection (F-04) returned `PII-A2-9B2C` for employee_id 2
-3. Submitted stolen code on the HR file page — PII section unlocked with salary and SSN
+1. After admin account takeover, explored the admin dashboard (WSTG-INPV-12)
+2. Opened **Network Diagnostics** — form accepts IP/hostname for ping test
+3. Submitted `127.0.0.1; id` — output included `uid=` from the `id` command
+4. Confirmed with `127.0.0.1 && cat /etc/passwd`
 
 #### Proof of Concept
 
+```
+127.0.0.1; id
+127.0.0.1 && cat /etc/passwd
+127.0.0.1 | whoami
+```
+
 ```http
-POST /admin/hr/2 HTTP/1.1
+POST /admin/diagnostics HTTP/1.1
 Host: [TARGET_VM_IP]
 Cookie: session=[ADMIN_SESSION]
 Content-Type: application/x-www-form-urlencoded
 
-access_code=PII-A2-9B2C
+host=127.0.0.1;+id
 ```
 
-`[Screenshot: HR file before unlock — PII form visible]`  
-`[Screenshot: HR file after unlock — salary $112,000 and SSN displayed]`
+`[Screenshot: diagnostics output showing uid=www-data from injected id command]`
 
 #### Impact
 
-Full PII exposure for any employee record once the static access code is obtained via SQLi. GDPR/compliance violation; demonstrates failure of defense-in-depth when secrets live in the same database as application data.
+Full OS command execution as the web server user. Escalates the chain from application-layer PII breach to infrastructure compromise.
 
 #### Remediation
 
-- Never store access codes in the same database reachable by application queries
-- Use per-session OTP, hardware tokens, or HR-only identity provider for PII access
-- Hash codes if stored locally; implement rate limiting and lockout on failed attempts
-- Log and alert on PII section unlock events
+```python
+# Fixed — no shell, strict validation
+import re
+if not re.fullmatch(r"[a-zA-Z0-9.\-]+", host):
+    abort(400)
+subprocess.run(["ping", "-c", "3", host], capture_output=True, text=True, timeout=10)
+```
+
+- Never use `shell=True` with user input
+- Allowlist valid hostname/IP characters
 
 ---
 
@@ -532,7 +546,7 @@ Full PII exposure for any employee record once the static access code is obtaine
 | P0 — Immediate | F-04 SQL Injection | Low | Development |
 | P0 — Immediate | F-01 Stored XSS | Low | Development |
 | P1 — High | F-02 CSRF | Medium | Development |
-| P1 — High | F-05 PII via leaked codes | Medium | Development |
+| P1 — High | F-05 Command Injection | Medium | Development |
 | P2 — Medium | F-03 Clickjacking | Low | Infrastructure / DevOps |
 
 ---
@@ -562,7 +576,7 @@ The FakeCompany portal demonstrates how individually "medium" vulnerabilities co
 | Fig. 2 | Stored XSS payload submission | F-01 |
 | Fig. 3 | Admin password changed via XSS | F-02 |
 | Fig. 4 | SQLi — UNION extract of PII access codes | F-04 |
-| Fig. 5 | HR file unlocked after entering stolen code | F-05 |
+| Fig. 5 | Command injection — id output in diagnostics | F-05 |
 
 ### Appendix C — CVSS Calculator Screenshots
 

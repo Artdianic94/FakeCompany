@@ -13,8 +13,8 @@ Use it to practice finding vulnerabilities manually (Burp Suite, browser dev too
 | Goal | How FakeCompany helps |
 |------|------------------------|
 | **Learn web pentest methodology** | Follow a realistic path from low-privilege guest to full data exposure |
-| **Practice client-side attacks** | Stored XSS, CSRF (via XSS), clickjacking |
-| **Practice server-side attacks** | SQL injection, sensitive data exposure via leaked secrets |
+| **Practice client-side attacks** | Stored XSS, CSRF (via XSS) |
+| **Practice server-side attacks** | SQL injection, OS command injection |
 | **Write a professional report** | Each vector maps to OWASP Top 10:2025 with clear PoC steps |
 | **Demonstrate attack chaining** | One scenario links multiple bugs into a single narrative |
 
@@ -168,8 +168,21 @@ Admin → Open HR file → phone/extension only, PII locked behind HR code
       ↓
 SQL Injection on /admin/search → extract pii_access_code from hr_records
       ↓
-Enter stolen code on HR file → salary, SSN, internal notes revealed
+Enter code on HR file → salary, SSN, internal notes (application-layer breach)
+      ↓
+Command Injection on /admin/diagnostics → OS commands as www-data (server compromise)
 ```
+
+### Minimum findings (2 + 2)
+
+| Side | # | Vector | Where |
+|------|---|--------|-------|
+| **Client** | 1 | Stored XSS | `/contact` |
+| **Client** | 2 | CSRF (triggered via XSS) | `/admin/settings/password` |
+| **Server** | 1 | SQL Injection | `/admin/search` → HR access codes from DB |
+| **Server** | 2 | OS Command Injection | `/admin/diagnostics` → shell via `ping` |
+
+Optional bonus: **Clickjacking** — `static/poc/clickjacking.html` (missing `X-Frame-Options`).
 
 ### Step 1 — Guest account + Stored XSS
 
@@ -228,9 +241,31 @@ The legitimate search never returns `pii_access_code` — SQL injection is the o
 
 1. Return to **Admin → Open HR file** for Alex (`/admin/hr/2`)
 2. Enter the code from Step 5: `PII-A2-9B2C`
-3. The confidential section unlocks — salary ($112,000), SSN, home address, internal notes
+3. PII section unlocks — salary ($112,000), SSN, home address, internal notes
 
-**Why this chain works:** Admin can reach HR files but not PII without a code. The codes are stored in the database alongside HR records. SQL injection bypasses the intended separation and allows full personnel data exposure.
+At this point the attacker has breached **application data**. The next step escalates to the **operating system**.
+
+### Step 7 — OS Command Injection (server compromise)
+
+Navigate to **Admin → Network Diagnostics** (`/admin/diagnostics`). The form runs `ping` against a user-supplied host — input is passed to a shell without sanitization.
+
+**Proof of concept:**
+
+```
+127.0.0.1; id
+```
+
+```
+127.0.0.1 && cat /etc/passwd
+```
+
+```
+127.0.0.1 | whoami
+```
+
+The output panel shows results of arbitrary OS commands executed as the web server user (`www-data` on the target VM).
+
+**Why this fits the chain:** SQLi steals **database secrets** (HR codes → PII). Command injection moves from data breach to **server-level compromise** — a natural post-exploitation step once admin access is obtained. Each server-side vector has a distinct purpose; neither replaces the other.
 
 ---
 
@@ -242,9 +277,9 @@ The legitimate search never returns `pii_access_code` — SQL injection is the o
 | **CSRF** (via XSS) | `/admin/settings/password` — no anti-CSRF token | A01 — Broken Access Control |
 | **Clickjacking** | Missing `X-Frame-Options` / CSP `frame-ancestors` | A01 — Broken Access Control |
 | **SQL Injection** | `/admin/search` — string concatenation in query | A03 — Injection |
-| **Sensitive data exposure** | HR PII codes stored in DB, leaked via SQLi → PII unlock | A01 — Broken Access Control |
+| **Command Injection** | `/admin/diagnostics` — unsanitized input in `shell=True` | A03 — Injection |
 
-**Clickjacking PoC:** open `static/poc/clickjacking.html` locally and replace `TARGET_VM_IP` in the iframe `src` with your lab VM address.
+**Optional — Clickjacking:** `static/poc/clickjacking.html` (missing `X-Frame-Options`).
 
 ---
 
@@ -259,6 +294,7 @@ The legitimate search never returns `pii_access_code` — SQL injection is the o
 | `/contact` | Public | Feedback form (**stored XSS**) |
 | `/admin` | Admin | Dashboard + employee HR file links |
 | `/admin/hr/<id>` | Admin | HR file (contact info + PII code gate) |
+| `/admin/diagnostics` | Admin | Network ping tool (**command injection**) |
 | `/admin/search` | Admin | Account lookup (**SQLi** on `username`) |
 | `/admin/settings/password` | Admin | Password change (**CSRF**) |
 
@@ -271,7 +307,8 @@ The legitimate search never returns `pii_access_code` — SQL injection is the o
 | Stored XSS | Remove `\|safe`; auto-escape output; add CSP (`script-src 'self'`) |
 | CSRF | Use CSRF tokens (e.g. Flask-WTF); set `SameSite=Strict` on session cookies |
 | SQL Injection | Parameterized queries: `cursor.execute("... WHERE username = ?", (username,))` |
-| PII access codes | Store codes outside the DB (HSM/vault); never selectable via user-facing queries; use rate limiting on code entry |
+| Command Injection | Never pass user input to `shell=True`; use `subprocess.run(["ping", "-c", "3", host])` with strict host validation |
+| PII codes in DB | Store secrets outside the DB; rate-limit code entry attempts |
 | Clickjacking | Add `X-Frame-Options: DENY` or `Content-Security-Policy: frame-ancestors 'none'` |
 
 ---
@@ -297,7 +334,7 @@ The template includes:
 | **Test Environment** | Lab diagram, host IPs, accounts used |
 | **Attack Chain Summary** | Narrative kill chain (guest → admin → data breach) |
 | **Findings Summary** | Table with CVSS scores and OWASP Top 10:2025 mapping |
-| **Detailed Findings (×5)** | Pre-filled for FakeCompany: XSS, CSRF, clickjacking, SQLi, PII code exposure |
+| **Detailed Findings (×5)** | Pre-filled: XSS, CSRF, clickjacking (bonus), SQLi, command injection |
 | **Per-finding blocks** | Description, discovery steps, Burp PoC, impact, CVSS justification, remediation |
 | **Remediation Roadmap** | Prioritized fix schedule |
 | **Appendices** | Screenshot index, Burp logs, tool versions |

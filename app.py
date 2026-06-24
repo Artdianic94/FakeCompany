@@ -1,5 +1,6 @@
 import os
 import sqlite3
+import subprocess
 from datetime import datetime
 
 from flask import Flask, flash, g, redirect, render_template, request, session, url_for
@@ -360,6 +361,37 @@ def admin_change_password():
             return redirect(url_for("admin"))
 
     return render_template("admin_password.html")
+
+
+@app.route("/admin/diagnostics", methods=["GET", "POST"])
+@admin_required
+def admin_diagnostics():
+    output = None
+    host = ""
+
+    if request.method == "POST":
+        host = request.form.get("host", "").strip()
+        if host:
+            try:
+                output = subprocess.check_output(
+                    f"ping -c 3 {host}",
+                    shell=True,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    timeout=10,
+                )
+            except subprocess.CalledProcessError as exc:
+                output = exc.output or str(exc)
+            except subprocess.TimeoutExpired:
+                output = "Diagnostic command timed out."
+            except OSError as exc:
+                output = str(exc)
+
+    return render_template(
+        "admin_diagnostics.html",
+        output=output,
+        host=host,
+    )
 
 
 @app.route("/about")
