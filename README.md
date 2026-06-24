@@ -212,7 +212,9 @@ username=' UNION SELECT employee_id, salary, ssn, internal_notes, personal_addre
 
 ### Step 5 — IDOR
 
-Any authenticated user can view another employee's confidential HR file by changing the ID:
+The portal UI does not expose HR record links to **guest** accounts — only public profiles are visible. However, the server does not enforce object-level authorization, so an attacker can access confidential records by requesting URLs directly (or after discovering employee IDs via SQLi).
+
+Log in as `guest` and open these URLs manually (Burp Repeater or address bar):
 
 ```
 /hr/record/1
@@ -220,7 +222,7 @@ Any authenticated user can view another employee's confidential HR file by chang
 /hr/record/3
 ```
 
-There is no ownership check — only authentication is required.
+No ownership check is performed — only authentication is required.
 
 ---
 

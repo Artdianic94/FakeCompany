@@ -40,7 +40,7 @@
                 <dd>#{{ employee.id }}</dd>
             </div>
         </dl>
-        {% if current_user %}
+        {% if current_user.role == 'admin' or (current_user.role == 'employee' and current_user.employee_id == employee.id) %}
         <a href="{{ url_for('hr_record', employee_id=employee.id) }}" class="btn btn-primary">
             View confidential HR record
         </a>
