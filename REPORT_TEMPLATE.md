@@ -34,7 +34,7 @@ A black-box / gray-box web application penetration test was performed against th
 | Low | `[e.g. 1]` |
 | Attack chain demonstrated | Yes — guest to full confidential data access |
 
-**Most significant risk:** An unauthenticated/low-privileged attacker can chain **stored XSS** and **missing CSRF protection** to compromise the administrator account, then exploit **SQL injection** and **IDOR** to extract credentials and confidential HR records (salary, SSN, internal notes).
+**Most significant risk:** An unauthenticated/low-privileged attacker can chain **stored XSS** and **missing CSRF protection** to compromise the administrator account, then use **SQL injection** to extract credentials and employee IDs from the `users` table, and **IDOR** to retrieve confidential HR data (salary, SSN, internal notes) that is stored separately in `hr_records`.
 
 **Overall recommendation:** `[e.g. Do not deploy to production. Address all findings before any real-world use. Priority: input validation, output encoding, parameterized queries, object-level access control, CSRF tokens, and security headers.]`
 
@@ -116,7 +116,8 @@ Testing aligned with **OWASP WSTG** phases:
 |----------|------|-----------------|
 | `guest` | guest | Initial foothold, XSS injection |
 | `admin` | admin | Victim session for XSS/CSRF chain |
-| `admin` (after takeover) | admin | SQLi, post-exploitation |
+| `admin` (after takeover) | admin | SQLi — extract users table |
+| `guest` | guest | IDOR — access /hr/record/<employee_id> |
 
 ---
 
@@ -124,7 +125,7 @@ Testing aligned with **OWASP WSTG** phases:
 
 `[Narrative paragraph describing the full kill chain — this is what elevates the report above isolated findings.]`
 
-Starting with a **guest** account, the tester submitted a malicious payload to the public feedback form. When an **administrator** reviewed messages, the stored script executed in their browser and changed the admin password via an unprotected POST endpoint. The tester then authenticated as admin, exploited **SQL injection** in the user search feature to extract database contents, and used **IDOR** to access confidential HR records belonging to other employees.
+Starting with a **guest** account, the tester submitted a malicious payload to the public feedback form. When an **administrator** reviewed messages, the stored script executed in their browser and changed the admin password via an unprotected POST endpoint. The tester authenticated as admin and exploited **SQL injection** in Account Lookup to dump the `users` table — obtaining portal credentials and `employee_id` values. Salary, SSN, and HR notes are stored in a separate `hr_records` table and are not exposed by the search query. Using the mapped employee IDs, the tester signed in as **guest** and accessed `/hr/record/<id>` directly, bypassing object-level authorization to retrieve the remaining confidential data.
 
 ```
 Guest account
@@ -139,11 +140,13 @@ Attacker logs in as admin
       ↓
 SQL Injection on /admin/search
       ↓
-Database extraction
+Extract passwords + employee_id from users (no salary/SSN)
       ↓
-IDOR on /hr/record/<id>
+Sign in as guest
       ↓
-Confidential employee records exposed
+IDOR: /hr/record/<employee_id>
+      ↓
+Salary, SSN, internal notes exposed
 ```
 
 ---
@@ -420,7 +423,7 @@ add_header Content-Security-Policy "frame-ancestors 'none'" always;
 
 #### Description
 
-The `username` parameter in `/admin/search` is concatenated directly into a SQL query without sanitization or parameterization. The UI presents a normal account lookup form with no visible SQL — injection must be discovered by testing the input field (WSTG-INPV-05). An attacker with admin access can extract arbitrary data from the database.
+The `username` parameter in `/admin/search` is concatenated directly into a SQL query without sanitization or parameterization. The UI presents a normal account lookup form with no visible SQL — injection must be discovered by testing the input field (WSTG-INPV-05). An attacker with admin access can extract data from the `users` table, including passwords and `employee_id` values. Confidential HR fields (salary, SSN) reside in a separate `hr_records` table and are not returned by the legitimate search query — they require the IDOR step (F-05).
 
 #### Location
 
@@ -433,7 +436,7 @@ The `username` parameter in `/admin/search` is concatenated directly into a SQL 
 1. Logged in as admin after account takeover and opened **Account Lookup**
 2. Submitted `'` in the username field — application returned a generic error (syntax break)
 3. Submitted `admin' OR '1'='1'--` — all accounts returned in the results table
-4. Used UNION-based injection (4 columns) to extract passwords and `hr_records` data
+4. Used UNION-based injection to dump the `users` table: passwords and `employee_id` values (mapped to Role and Email columns in the UI)
 
 #### Proof of Concept
 
@@ -442,28 +445,23 @@ The `username` parameter in `/admin/search` is concatenated directly into a SQL 
 admin' OR '1'='1'--
 ```
 
-**UNION — extract credentials** (passwords appear in the Role column):
+**UNION — extract credentials and employee IDs** (password → Role column, employee_id → Email column):
 ```
-' UNION SELECT id, username, password, email FROM users--
-```
-
-**UNION — extract HR records:**
-```
-' UNION SELECT employee_id, salary, ssn, internal_notes FROM hr_records--
+' UNION SELECT id, username, password, employee_id FROM users--
 ```
 
 ```http
-GET /admin/search?username=admin'%20OR%20'1'%3D'1'-- HTTP/1.1
+GET /admin/search?username='+%UNION+SELECT+id,+username,+password,+employee_id+FROM+users-- HTTP/1.1
 Host: [TARGET_VM_IP]
-Cookie: session=[SESSION]
+Cookie: session=[ADMIN_SESSION]
 ```
 
-`[Screenshot: Account Lookup results showing multiple users after OR injection]`  
-`[Screenshot: UNION query — anomalous values in Role/Email columns revealing SSN and salary]`
+`[Screenshot: Account Lookup — multiple rows after OR injection]`  
+`[Screenshot: UNION results — passwords in Role column, employee_id in Email column]`
 
 #### Impact
 
-Full database read access — user credentials, salaries, SSNs, internal security notes. The application does not display passwords in normal search results, but SQLi bypasses that UI restriction.
+Full read access to the `users` table — portal credentials and employee ID mapping. Does **not** directly expose salary, SSN, or HR notes (stored in `hr_records`). Enables the IDOR phase (F-05) by revealing which `employee_id` values to request.
 
 #### Remediation
 
@@ -492,18 +490,22 @@ cursor.execute(
 
 #### Description
 
-The endpoint `/hr/record/<employee_id>` returns confidential HR data (salary, SSN, internal notes) for any valid employee ID. The application checks that the user is authenticated but does **not** verify that the requester owns or is authorized to view the requested record.
+The endpoint `/hr/record/<employee_id>` returns confidential HR data (salary, SSN, internal notes) stored in the `hr_records` table. This data is separate from the `users` table accessed via SQL injection (F-04). The application checks that the user is authenticated but does **not** verify that the requester owns or is authorized to view the requested record.
 
 #### Location
 
-- **Endpoint:** `GET /hr/record/<id>`
-- **Objects:** Employee IDs 1, 2, 3
+- **Endpoint:** `GET /hr/record/<employee_id>`
+- **Data store:** `hr_records` (salary, ssn, internal_notes, personal_address)
+- **Objects:** Employee IDs 1, 2, 3 (mapped to users via `employee_id` column)
 
 #### How It Was Found
 
-1. Logged in as `guest` (low-privilege account)
-2. Manually incremented `employee_id` in the URL: `/hr/record/1`, `/hr/record/2`, etc. (WSTG-ATHZ-04)
-3. Retrieved confidential PII for employees other than the authenticated user
+1. Completed SQL injection (F-04) as admin — extracted `employee_id` values from the `users` table (e.g. alex → 2)
+2. Signed out and logged in as `guest` to test access without elevated privileges
+3. Requested `/hr/record/2` using the employee ID from Step 1 (WSTG-ATHZ-04)
+4. Retrieved salary ($112,000), SSN, and internal notes not available in the SQLi output
+
+**URL discovery:** Public profiles at `/profile/N` display Employee ID `#N`, suggesting a parallel path such as `/hr/record/N`. SQLi confirms the correct IDs to target.
 
 #### Proof of Concept
 
@@ -513,11 +515,13 @@ Host: [TARGET_VM_IP]
 Cookie: session=[GUEST_SESSION]
 ```
 
-`[Screenshot: guest session viewing Alex Ivanov's salary and SSN]`
+Expected response body includes Alex Ivanov's salary, SSN, and internal notes.
+
+`[Screenshot: guest session viewing Alex Ivanov's HR record after SQLi revealed employee_id=2]`
 
 #### Impact
 
-Horizontal privilege escalation — any authenticated user can access sensitive HR data for all employees. GDPR / compliance violation.
+Horizontal privilege escalation — any authenticated user (including guest) can access sensitive HR data for all employees. Completes the attack chain: SQLi provides the map (`employee_id`), IDOR provides the confidential HR payload.
 
 #### Remediation
 
@@ -570,8 +574,8 @@ The FakeCompany portal demonstrates how individually "medium" vulnerabilities co
 | Fig. 1 | Lab network topology | Section 4 |
 | Fig. 2 | Stored XSS payload submission | F-01 |
 | Fig. 3 | Admin password changed via XSS | F-02 |
-| Fig. 4 | SQLi — all users extracted | F-04 |
-| Fig. 5 | IDOR — guest views HR record #2 | F-05 |
+| Fig. 4 | SQLi — UNION dump of users (passwords + employee_id) | F-04 |
+| Fig. 5 | IDOR — guest views /hr/record/2 after chain | F-05 |
 
 ### Appendix C — CVSS Calculator Screenshots
 
