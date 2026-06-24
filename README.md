@@ -111,7 +111,7 @@ server {
     listen 80;
     server_name _;
 
-    # Intentionally missing X-Frame-Options — required for clickjacking demo
+    # Lab config — add X-Frame-Options and CSP in production
     location / {
         proxy_pass http://127.0.0.1:5000;
         proxy_set_header Host $host;
@@ -183,8 +183,6 @@ Command Injection on /admin/reports/export → OS commands as www-data (server c
 | **Client** | 2 | CSRF (triggered via XSS) | `/admin/settings/password` |
 | **Server** | 1 | SQL Injection | `/admin/search` → HR access codes from DB |
 | **Server** | 2 | OS Command Injection | `/admin/reports/export` — shell metacharacters in `report_label` |
-
-Optional bonus: **Clickjacking** — `static/poc/clickjacking.html` (missing `X-Frame-Options`).
 
 ### Step 1 — Guest account + Stored XSS
 
@@ -277,11 +275,8 @@ The **Export log** panel shows output consistent with OS command execution (e.g.
 |--------|----------|-------------------|
 | **Stored XSS** | `/contact` — unsanitized output (`\|safe`) | A03 — Injection |
 | **CSRF** (via XSS) | `/admin/settings/password` — no anti-CSRF token | A01 — Broken Access Control |
-| **Clickjacking** | Missing `X-Frame-Options` / CSP `frame-ancestors` | A01 — Broken Access Control |
 | **SQL Injection** | `/admin/search` — string concatenation in query | A03 — Injection |
 | **Command Injection** | `/admin/reports/export` — `report_label` in shell command | A03 — Injection |
-
-**Optional — Clickjacking:** `static/poc/clickjacking.html` (missing `X-Frame-Options`).
 
 ---
 
@@ -309,9 +304,8 @@ The **Export log** panel shows output consistent with OS command execution (e.g.
 | Stored XSS | Remove `\|safe`; auto-escape output; add CSP (`script-src 'self'`) |
 | CSRF | Use CSRF tokens (e.g. Flask-WTF); set `SameSite=Strict` on session cookies |
 | SQL Injection | Parameterized queries: `cursor.execute("... WHERE username = ?", (username,))` |
-| Command Injection | Never pass user input to `shell=True`; use `subprocess.run(["ping", "-c", "3", host])` with strict host validation |
+| Command Injection | Never pass user input to `shell=True`; validate `report_label` with an allowlist |
 | PII codes in DB | Store secrets outside the DB; rate-limit code entry attempts |
-| Clickjacking | Add `X-Frame-Options: DENY` or `Content-Security-Policy: frame-ancestors 'none'` |
 
 ---
 
@@ -336,7 +330,7 @@ The template includes:
 | **Test Environment** | Lab diagram, host IPs, accounts used |
 | **Attack Chain Summary** | Narrative kill chain (guest → admin → data breach) |
 | **Findings Summary** | Table with CVSS scores and OWASP Top 10:2025 mapping |
-| **Detailed Findings (×5)** | Pre-filled: XSS, CSRF, clickjacking (bonus), SQLi, command injection |
+| **Detailed Findings (×4)** | Pre-filled: XSS, CSRF, SQLi, command injection |
 | **Per-finding blocks** | Description, discovery steps, Burp PoC, impact, CVSS justification, remediation |
 | **Remediation Roadmap** | Prioritized fix schedule |
 | **Appendices** | Screenshot index, Burp logs, tool versions |
@@ -354,9 +348,7 @@ FakeCompany/
 ├── REPORT_TEMPLATE.md      # Penetration test report skeleton (thesis / lab)
 ├── fakecompany.db          # SQLite database (created on first run)
 ├── static/
-│   ├── css/style.css       # Portal styling
-│   └── poc/
-│       └── clickjacking.html
+│   └── css/style.css       # Portal styling
 └── templates/              # Jinja2 HTML templates
 ```
 
