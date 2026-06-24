@@ -280,20 +280,28 @@ def admin():
 @admin_required
 def admin_search():
     results = None
-    query_display = ""
-    username = request.values.get("username", "")
+    error = None
+    username = request.values.get("username", "").strip()
 
     if username:
-        query_display = f"SELECT * FROM users WHERE username = '{username}'"
-        cursor = get_db().cursor()
-        cursor.execute(query_display)
-        results = cursor.fetchall()
+        query = (
+            "SELECT id, username, role, email "
+            f"FROM users WHERE username = '{username}'"
+        )
+        try:
+            cursor = get_db().cursor()
+            cursor.execute(query)
+            results = cursor.fetchall()
+        except sqlite3.Error:
+            error = "Unable to complete search. Please check your input and try again."
+            results = []
 
     return render_template(
         "admin_search.html",
         results=results,
         username=username,
-        query_display=query_display,
+        error=error,
+        searched=bool(username),
     )
 
 

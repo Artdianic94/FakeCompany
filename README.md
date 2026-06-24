@@ -198,16 +198,21 @@ Password: pwned123
 
 ### Step 4 — SQL Injection
 
-Navigate to **Admin → User Search** (`/admin/search`).
+Navigate to **Admin → Account Lookup** (`/admin/search`). The page looks like a normal username search — no SQL is shown. Test the `username` parameter in Burp Repeater.
 
-Basic PoC:
+**Discover injection** — single quote returns an error or unexpected behavior; OR clause returns all accounts:
 ```
-username=admin' OR '1'='1
+admin' OR '1'='1'--
 ```
 
-Extract HR records via UNION:
+**Extract password hashes** (appear in the Role column due to UNION column mapping):
 ```
-username=' UNION SELECT employee_id, salary, ssn, internal_notes, personal_address FROM hr_records--
+' UNION SELECT id, username, password, email FROM users--
+```
+
+**Extract HR records** via UNION (4 columns must match the query):
+```
+' UNION SELECT employee_id, salary, ssn, internal_notes FROM hr_records--
 ```
 
 ### Step 5 — IDOR
@@ -251,7 +256,7 @@ No ownership check is performed — only authentication is required.
 | `/hr/record/<id>` | Required | Confidential HR record (**IDOR**) |
 | `/contact` | Public | Feedback form (**stored XSS**) |
 | `/admin` | Admin | Administration dashboard |
-| `/admin/search` | Admin | User database search (**SQLi**) |
+| `/admin/search` | Admin | Account lookup (**SQLi** on `username`) |
 | `/admin/settings/password` | Admin | Password change (**CSRF**) |
 
 ---

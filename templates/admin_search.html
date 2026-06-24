@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 
-{% block title %}User Search{% endblock %}
+{% block title %}Account Lookup{% endblock %}
 
 {% block content %}
 <section class="page-header">
     <a href="{{ url_for('admin') }}" class="back-link">&larr; Admin dashboard</a>
     <p class="eyebrow">User Management</p>
-    <h1>Database User Search</h1>
-    <p class="page-lead">Query the users table by exact username match.</p>
+    <h1>Account Lookup</h1>
+    <p class="page-lead">Search portal accounts by username for support and access reviews.</p>
 </section>
 
 <section class="section">
@@ -15,30 +15,26 @@
         <form method="GET" class="inline-search-form">
             <div class="form-group form-group-flex">
                 <label for="username">Username</label>
-                <input type="text" id="username" name="username" value="{{ username }}" placeholder="admin" required>
+                <input type="text" id="username" name="username" value="{{ username }}" placeholder="e.g. diana" required>
             </div>
             <button type="submit" class="btn btn-primary">Search</button>
         </form>
     </div>
 
-    {% if query_display %}
-    <div class="code-panel">
-        <span class="code-label">Executed query</span>
-        <pre class="code-block">{{ query_display }}</pre>
-    </div>
+    {% if error %}
+    <div class="flash flash-error">{{ error }}</div>
     {% endif %}
 
-    {% if results is not none %}
+    {% if searched %}
     <div class="results-panel">
-        <h2>Results ({{ results|length }} row{{ 's' if results|length != 1 }})</h2>
+        <h2>Search results ({{ results|length }})</h2>
         {% if results %}
         <div class="table-wrap">
             <table class="data-table">
                 <thead>
                     <tr>
-                        <th>ID</th>
+                        <th>Account ID</th>
                         <th>Username</th>
-                        <th>Password</th>
                         <th>Role</th>
                         <th>Email</th>
                     </tr>
@@ -48,16 +44,15 @@
                     <tr>
                         <td>{{ row[0] }}</td>
                         <td><code>{{ row[1] }}</code></td>
-                        <td class="mono sensitive">{{ row[2] }}</td>
-                        <td><span class="badge">{{ row[3] }}</span></td>
-                        <td>{{ row[4] }}</td>
+                        <td><span class="badge">{{ row[2] }}</span></td>
+                        <td>{{ row[3] }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
         {% else %}
-        <div class="empty-state">No users matched your search.</div>
+        <div class="empty-state">No accounts matched that username.</div>
         {% endif %}
     </div>
     {% endif %}

