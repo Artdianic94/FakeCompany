@@ -35,6 +35,24 @@
 </section>
 
 <section class="section">
+    <h2 class="section-title">Employee HR files</h2>
+    <p class="page-lead">View contact details for personnel records. PII requires an HR access code.</p>
+    <div class="grid grid-3">
+        {% for employee in employees %}
+        <article class="employee-card">
+            <div class="employee-avatar">{{ employee.name.split()[0][0] }}{{ employee.name.split()[-1][0] }}</div>
+            <h3>{{ employee.name }}</h3>
+            <p class="employee-role">{{ employee.role }}</p>
+            <p class="employee-dept">{{ employee.department }}</p>
+            <div class="card-actions">
+                <a href="{{ url_for('admin_hr_record', employee_id=employee.id) }}" class="btn btn-primary btn-sm">Open HR file</a>
+            </div>
+        </article>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="section">
     <div class="notice-card notice-card-warning">
         <h3>Administrator notice</h3>
         <p>

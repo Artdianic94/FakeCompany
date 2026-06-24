@@ -34,7 +34,7 @@ A black-box / gray-box web application penetration test was performed against th
 | Low | `[e.g. 1]` |
 | Attack chain demonstrated | Yes — guest to full confidential data access |
 
-**Most significant risk:** An unauthenticated/low-privileged attacker can chain **stored XSS** and **missing CSRF protection** to compromise the administrator account, then use **SQL injection** to extract credentials and employee IDs from the `users` table, and **IDOR** to retrieve confidential HR data (salary, SSN, internal notes) that is stored separately in `hr_records`.
+**Most significant risk:** An attacker with a guest account can chain **stored XSS** and **CSRF** to hijack the administrator session, then use **SQL injection** to extract HR PII access codes from the database and unlock confidential personnel data (salary, SSN, internal notes) that the application intentionally gates behind a secondary verification step.
 
 **Overall recommendation:** `[e.g. Do not deploy to production. Address all findings before any real-world use. Priority: input validation, output encoding, parameterized queries, object-level access control, CSRF tokens, and security headers.]`
 
@@ -116,8 +116,7 @@ Testing aligned with **OWASP WSTG** phases:
 |----------|------|-----------------|
 | `guest` | guest | Initial foothold, XSS injection |
 | `admin` | admin | Victim session for XSS/CSRF chain |
-| `admin` (after takeover) | admin | SQLi — extract users table |
-| `guest` | guest | IDOR — access /hr/record/<employee_id> |
+| `admin` (after takeover) | admin | HR file review, SQLi, PII unlock |
 
 ---
 
@@ -125,7 +124,7 @@ Testing aligned with **OWASP WSTG** phases:
 
 `[Narrative paragraph describing the full kill chain — this is what elevates the report above isolated findings.]`
 
-Starting with a **guest** account, the tester submitted a malicious payload to the public feedback form. When an **administrator** reviewed messages, the stored script executed in their browser and changed the admin password via an unprotected POST endpoint. The tester authenticated as admin and exploited **SQL injection** in Account Lookup to dump the `users` table — obtaining portal credentials and `employee_id` values. Salary, SSN, and HR notes are stored in a separate `hr_records` table and are not exposed by the search query. Using the mapped employee IDs, the tester signed in as **guest** and accessed `/hr/record/<id>` directly, bypassing object-level authorization to retrieve the remaining confidential data.
+Starting with a **guest** account, the tester submitted a malicious payload to the public feedback form. When an **administrator** reviewed messages, the stored script changed the admin password via an unprotected POST endpoint. After authenticating as admin, the tester opened an employee HR file from the admin dashboard — obtaining only contact details while PII remained locked behind an HR access code. **SQL injection** in Account Lookup extracted `pii_access_code` values from the `hr_records` table. The tester entered the stolen code on the HR file page and unlocked salary, SSN, and internal notes for the target employee.
 
 ```
 Guest account
@@ -138,15 +137,11 @@ XSS → POST /admin/settings/password (no CSRF token)
       ↓
 Attacker logs in as admin
       ↓
-SQL Injection on /admin/search
+Admin → Open HR file → contact info only, PII locked
       ↓
-Extract passwords + employee_id from users (no salary/SSN)
+SQL Injection → extract pii_access_code from hr_records
       ↓
-Sign in as guest
-      ↓
-IDOR: /hr/record/<employee_id>
-      ↓
-Salary, SSN, internal notes exposed
+Enter stolen code → salary, SSN, internal notes revealed
 ```
 
 ---
@@ -159,7 +154,7 @@ Salary, SSN, internal notes exposed
 | F-02 | Cross-Site Request Forgery (CSRF) on Password Change | High | `[8.1]` | A01 Broken Access Control | Client-side |
 | F-03 | Clickjacking — Missing Frame Protection | Medium | `[4.3]` | A01 Broken Access Control | Client-side |
 | F-04 | SQL Injection in Account Lookup | Critical | `[9.8]` | A03 Injection | Server-side |
-| F-05 | Insecure Direct Object Reference (IDOR) in HR Records | High | `[6.5]` | A01 Broken Access Control | Server-side |
+| F-05 | PII Exposure via Leaked HR Access Codes | High | `[7.5]` | A01 Broken Access Control | Server-side |
 
 > Adjust CVSS scores after calculating with the [FIRST CVSS v3.1 Calculator](https://www.first.org/cvss/calculator/3.1).
 
@@ -423,7 +418,7 @@ add_header Content-Security-Policy "frame-ancestors 'none'" always;
 
 #### Description
 
-The `username` parameter in `/admin/search` is concatenated directly into a SQL query without sanitization or parameterization. The UI presents a normal account lookup form with no visible SQL — injection must be discovered by testing the input field (WSTG-INPV-05). An attacker with admin access can extract data from the `users` table, including passwords and `employee_id` values. Confidential HR fields (salary, SSN) reside in a separate `hr_records` table and are not returned by the legitimate search query — they require the IDOR step (F-05).
+The `username` parameter in `/admin/search` is concatenated directly into a SQL query without sanitization or parameterization. An attacker with admin access can use UNION-based injection to read arbitrary tables — including `hr_records`, which stores `pii_access_code` values that gate access to confidential HR data.
 
 #### Location
 
@@ -433,10 +428,10 @@ The `username` parameter in `/admin/search` is concatenated directly into a SQL 
 
 #### How It Was Found
 
-1. Logged in as admin after account takeover and opened **Account Lookup**
-2. Submitted `'` in the username field — application returned a generic error (syntax break)
-3. Submitted `admin' OR '1'='1'--` — all accounts returned in the results table
-4. Used UNION-based injection to dump the `users` table: passwords and `employee_id` values (mapped to Role and Email columns in the UI)
+1. Logged in as admin after account takeover; opened an HR file — PII section locked behind access code
+2. Opened **Account Lookup**; submitted `'` — generic error returned
+3. Submitted `admin' OR '1'='1'--` — multiple rows returned
+4. Used UNION injection to extract `pii_access_code` from `hr_records` (WSTG-INPV-05)
 
 #### Proof of Concept
 
@@ -445,23 +440,22 @@ The `username` parameter in `/admin/search` is concatenated directly into a SQL 
 admin' OR '1'='1'--
 ```
 
-**UNION — extract credentials and employee IDs** (password → Role column, employee_id → Email column):
+**UNION — extract HR PII access codes:**
 ```
-' UNION SELECT id, username, password, employee_id FROM users--
+' UNION SELECT employee_id, pii_access_code, phone, office_extension FROM hr_records--
 ```
 
 ```http
-GET /admin/search?username='+%UNION+SELECT+id,+username,+password,+employee_id+FROM+users-- HTTP/1.1
+GET /admin/search?username='+%UNION+SELECT+employee_id,+pii_access_code,+phone,+office_extension+FROM+hr_records-- HTTP/1.1
 Host: [TARGET_VM_IP]
 Cookie: session=[ADMIN_SESSION]
 ```
 
-`[Screenshot: Account Lookup — multiple rows after OR injection]`  
-`[Screenshot: UNION results — passwords in Role column, employee_id in Email column]`
+`[Screenshot: UNION results — PII-A2-9B2C visible in Username column for employee_id=2]`
 
 #### Impact
 
-Full read access to the `users` table — portal credentials and employee ID mapping. Does **not** directly expose salary, SSN, or HR notes (stored in `hr_records`). Enables the IDOR phase (F-05) by revealing which `employee_id` values to request.
+Extracts HR PII access codes from the database, bypassing the application's secondary verification control. Enables full personnel data exposure when combined with F-05.
 
 #### Remediation
 
@@ -472,69 +466,62 @@ cursor.execute(
 )
 ```
 
-- Use parameterized queries exclusively (ORM or prepared statements)
-- Apply least-privilege DB account (read-only if search only needs SELECT)
-- Return generic errors to the client; log SQL errors server-side only
+- Use parameterized queries exclusively
+- Store access codes outside the application database (secrets manager)
+- Apply least-privilege DB permissions — search query should not reach `hr_records`
 
 ---
 
-### F-05 — Insecure Direct Object Reference (IDOR) in HR Records
+### F-05 — PII Exposure via Leaked HR Access Codes
 
 | Field | Value |
 |-------|-------|
 | **Severity** | High |
-| **CVSS v3.1** | 6.5 — `CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N` |
+| **CVSS v3.1** | 7.5 — `CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:N/A:N` |
 | **OWASP** | A01 — Broken Access Control |
-| **WSTG** | WSTG-ATHZ-04 (Insecure Direct Object References) |
+| **WSTG** | WSTG-ATHN-05 (Testing for Weak Security Question/Answer) / defense-in-depth failure |
 | **Type** | Server-side |
 
 #### Description
 
-The endpoint `/hr/record/<employee_id>` returns confidential HR data (salary, SSN, internal notes) stored in the `hr_records` table. This data is separate from the `users` table accessed via SQL injection (F-04). The application checks that the user is authenticated but does **not** verify that the requester owns or is authorized to view the requested record.
+Employee HR files at `/admin/hr/<employee_id>` show contact information to administrators but gate PII (salary, SSN, internal notes) behind an HR access code. The codes are stored in plaintext in `hr_records.pii_access_code`. Combined with SQL injection (F-04), an attacker can obtain the code and unlock the confidential section — rendering the access control meaningless.
 
 #### Location
 
-- **Endpoint:** `GET /hr/record/<employee_id>`
-- **Data store:** `hr_records` (salary, ssn, internal_notes, personal_address)
-- **Objects:** Employee IDs 1, 2, 3 (mapped to users via `employee_id` column)
+- **Endpoint:** `GET/POST /admin/hr/<employee_id>`
+- **Parameter:** `access_code` (POST form)
+- **Secret storage:** `hr_records.pii_access_code` column
 
 #### How It Was Found
 
-1. Completed SQL injection (F-04) as admin — extracted `employee_id` values from the `users` table (e.g. alex → 2)
-2. Signed out and logged in as `guest` to test access without elevated privileges
-3. Requested `/hr/record/2` using the employee ID from Step 1 (WSTG-ATHZ-04)
-4. Retrieved salary ($112,000), SSN, and internal notes not available in the SQLi output
-
-**URL discovery:** Public profiles at `/profile/N` display Employee ID `#N`, suggesting a parallel path such as `/hr/record/N`. SQLi confirms the correct IDs to target.
+1. As admin, opened **Employee HR files → Alex Ivanov** — saw phone/extension only; PII form displayed
+2. SQL injection (F-04) returned `PII-A2-9B2C` for employee_id 2
+3. Submitted stolen code on the HR file page — PII section unlocked with salary and SSN
 
 #### Proof of Concept
 
 ```http
-GET /hr/record/2 HTTP/1.1
+POST /admin/hr/2 HTTP/1.1
 Host: [TARGET_VM_IP]
-Cookie: session=[GUEST_SESSION]
+Cookie: session=[ADMIN_SESSION]
+Content-Type: application/x-www-form-urlencoded
+
+access_code=PII-A2-9B2C
 ```
 
-Expected response body includes Alex Ivanov's salary, SSN, and internal notes.
-
-`[Screenshot: guest session viewing Alex Ivanov's HR record after SQLi revealed employee_id=2]`
+`[Screenshot: HR file before unlock — PII form visible]`  
+`[Screenshot: HR file after unlock — salary $112,000 and SSN displayed]`
 
 #### Impact
 
-Horizontal privilege escalation — any authenticated user (including guest) can access sensitive HR data for all employees. Completes the attack chain: SQLi provides the map (`employee_id`), IDOR provides the confidential HR payload.
+Full PII exposure for any employee record once the static access code is obtained via SQLi. GDPR/compliance violation; demonstrates failure of defense-in-depth when secrets live in the same database as application data.
 
 #### Remediation
 
-```python
-# Verify ownership before returning record
-user = current_user()
-if user.role != "admin" and user.employee_id != employee_id:
-    abort(403)
-```
-
-- Enforce object-level authorization on every data access
-- Use indirect references (UUIDs) where possible
-- Log and alert on cross-user access attempts
+- Never store access codes in the same database reachable by application queries
+- Use per-session OTP, hardware tokens, or HR-only identity provider for PII access
+- Hash codes if stored locally; implement rate limiting and lockout on failed attempts
+- Log and alert on PII section unlock events
 
 ---
 
@@ -545,7 +532,7 @@ if user.role != "admin" and user.employee_id != employee_id:
 | P0 — Immediate | F-04 SQL Injection | Low | Development |
 | P0 — Immediate | F-01 Stored XSS | Low | Development |
 | P1 — High | F-02 CSRF | Medium | Development |
-| P1 — High | F-05 IDOR | Medium | Development |
+| P1 — High | F-05 PII via leaked codes | Medium | Development |
 | P2 — Medium | F-03 Clickjacking | Low | Infrastructure / DevOps |
 
 ---
@@ -574,8 +561,8 @@ The FakeCompany portal demonstrates how individually "medium" vulnerabilities co
 | Fig. 1 | Lab network topology | Section 4 |
 | Fig. 2 | Stored XSS payload submission | F-01 |
 | Fig. 3 | Admin password changed via XSS | F-02 |
-| Fig. 4 | SQLi — UNION dump of users (passwords + employee_id) | F-04 |
-| Fig. 5 | IDOR — guest views /hr/record/2 after chain | F-05 |
+| Fig. 4 | SQLi — UNION extract of PII access codes | F-04 |
+| Fig. 5 | HR file unlocked after entering stolen code | F-05 |
 
 ### Appendix C — CVSS Calculator Screenshots
 

@@ -41,17 +41,11 @@
             <h3>Internal Feedback</h3>
             <p>Share suggestions, report issues, or send messages to the management team.</p>
         </a>
-        {% if current_user.role == 'employee' and current_user.employee_id %}
-        <a href="{{ url_for('hr_record', employee_id=current_user.employee_id) }}" class="action-card">
-            <div class="action-icon">📋</div>
-            <h3>My HR Record</h3>
-            <p>View your confidential employment record, compensation, and notes.</p>
-        </a>
-        {% elif current_user.role == 'admin' %}
+        {% if current_user.role == 'admin' %}
         <a href="{{ url_for('admin') }}" class="action-card action-card-accent">
             <div class="action-icon">⚙️</div>
             <h3>Administration</h3>
-            <p>User search, feedback review, and account security settings.</p>
+            <p>Feedback inbox, account lookup, and employee HR files.</p>
         </a>
         {% else %}
         <a href="{{ url_for('about') }}" class="action-card">

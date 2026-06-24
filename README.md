@@ -14,7 +14,7 @@ Use it to practice finding vulnerabilities manually (Burp Suite, browser dev too
 |------|------------------------|
 | **Learn web pentest methodology** | Follow a realistic path from low-privilege guest to full data exposure |
 | **Practice client-side attacks** | Stored XSS, CSRF (via XSS), clickjacking |
-| **Practice server-side attacks** | SQL injection, broken access control / IDOR |
+| **Practice server-side attacks** | SQL injection, sensitive data exposure via leaked secrets |
 | **Write a professional report** | Each vector maps to OWASP Top 10:2025 with clear PoC steps |
 | **Demonstrate attack chaining** | One scenario links multiple bugs into a single narrative |
 
@@ -162,15 +162,13 @@ Admin opens Feedback Inbox
       ↓
 XSS sends POST to /admin/settings/password (no CSRF token)
       ↓
-Attacker logs in as admin with the new password
+Attacker logs in as admin
       ↓
-SQL Injection on /admin/search
+Admin → Open HR file → phone/extension only, PII locked behind HR code
       ↓
-Extract credentials + employee_id from users table (no salary/SSN here)
+SQL Injection on /admin/search → extract pii_access_code from hr_records
       ↓
-Sign in as guest (lowest privilege)
-      ↓
-IDOR: /hr/record/<employee_id> → salary, SSN, internal notes
+Enter stolen code on HR file → salary, SSN, internal notes revealed
 ```
 
 ### Step 1 — Guest account + Stored XSS
@@ -196,45 +194,43 @@ Username: admin
 Password: pwned123
 ```
 
-### Step 4 — SQL Injection (users table only)
+### Step 4 — Admin opens HR file (PII locked)
 
-Navigate to **Admin → Account Lookup** (`/admin/search`). The page looks like a normal username search — no SQL is shown. Test the `username` parameter in Burp Repeater.
+1. Go to **Admin Dashboard → Employee HR files**
+2. Click **Open HR file** for Alex Ivanov (`/admin/hr/2`)
+3. You see **non-sensitive** data only: work phone, office extension, department
+4. The **PII section** (salary, SSN, internal notes) is locked — the form asks for an **HR PII access code** known only to HR staff
 
-**Discover injection** — single quote returns an error; OR clause returns all accounts:
+### Step 5 — SQL Injection (extract HR access codes)
+
+Navigate to **Admin → Account Lookup** (`/admin/search`). Test the `username` parameter in Burp Repeater.
+
+**Discover injection:**
 ```
 admin' OR '1'='1'--
 ```
 
-**Extract credentials and employee IDs** via UNION. The query only selects four columns from `users` — passwords and `employee_id` values appear in the Role and Email columns:
+**Extract HR PII access codes** from the `hr_records` table via UNION (4 columns must match the query):
 
 ```
-' UNION SELECT id, username, password, employee_id FROM users--
+' UNION SELECT employee_id, pii_access_code, phone, office_extension FROM hr_records--
 ```
 
 Example result mapping:
 
-| Account ID | Username | Role *(actual: password)* | Email *(actual: employee_id)* |
-|------------|----------|---------------------------|-------------------------------|
-| 2 | alex | sysadmin99 | 2 |
-| 4 | diana | diana2024! | 1 |
+| Account ID | Username *(actual: access code)* | Role *(actual: phone)* | Email *(actual: ext.)* |
+|------------|----------------------------------|------------------------|------------------------|
+| 2 | PII-A2-9B2C | +1-555-0187 | ext. 512 |
 
-Salary, SSN, and internal HR notes are **not** stored in `users` — they live in a separate `hr_records` table and are not returned by this search. Note the `employee_id` values for the next step.
+The legitimate search never returns `pii_access_code` — SQL injection is the only way to obtain it.
 
-### Step 5 — IDOR (hr_records via the portal)
+### Step 6 — Unlock PII with stolen code
 
-Sign out from admin and log in as **`guest`** to prove access without elevated privileges.
+1. Return to **Admin → Open HR file** for Alex (`/admin/hr/2`)
+2. Enter the code from Step 5: `PII-A2-9B2C`
+3. The confidential section unlocks — salary ($112,000), SSN, home address, internal notes
 
-Using `employee_id` values from Step 4 (or by guessing `/hr/record/<id>` after seeing Employee ID `#N` on `/profile/N`), request HR files directly:
-
-```
-/hr/record/1   →  Diana — salary, SSN, internal notes
-/hr/record/2   →  Alex
-/hr/record/3   →  Maria
-```
-
-The UI hides HR links from guest accounts, but the server does not verify record ownership — only that a session exists.
-
-**Why two steps?** SQLi exposes the account database (`users`); confidential HR data (`hr_records`) is served only through `/hr/record/<id>`. Each vulnerability unlocks a different data store — together they complete the breach.
+**Why this chain works:** Admin can reach HR files but not PII without a code. The codes are stored in the database alongside HR records. SQL injection bypasses the intended separation and allows full personnel data exposure.
 
 ---
 
@@ -246,7 +242,7 @@ The UI hides HR links from guest accounts, but the server does not verify record
 | **CSRF** (via XSS) | `/admin/settings/password` — no anti-CSRF token | A01 — Broken Access Control |
 | **Clickjacking** | Missing `X-Frame-Options` / CSP `frame-ancestors` | A01 — Broken Access Control |
 | **SQL Injection** | `/admin/search` — string concatenation in query | A03 — Injection |
-| **IDOR / BAC** | `/hr/record/<id>` — no object-level authorization | A01 — Broken Access Control |
+| **Sensitive data exposure** | HR PII codes stored in DB, leaked via SQLi → PII unlock | A01 — Broken Access Control |
 
 **Clickjacking PoC:** open `static/poc/clickjacking.html` locally and replace `TARGET_VM_IP` in the iframe `src` with your lab VM address.
 
@@ -260,9 +256,9 @@ The UI hides HR links from guest accounts, but the server does not verify record
 | `/login` | Public | Sign-in page |
 | `/employees` | Required | Employee directory |
 | `/profile/<id>` | Public | Public employee profile |
-| `/hr/record/<id>` | Required | Confidential HR record (**IDOR**) |
 | `/contact` | Public | Feedback form (**stored XSS**) |
-| `/admin` | Admin | Administration dashboard |
+| `/admin` | Admin | Dashboard + employee HR file links |
+| `/admin/hr/<id>` | Admin | HR file (contact info + PII code gate) |
 | `/admin/search` | Admin | Account lookup (**SQLi** on `username`) |
 | `/admin/settings/password` | Admin | Password change (**CSRF**) |
 
@@ -275,7 +271,7 @@ The UI hides HR links from guest accounts, but the server does not verify record
 | Stored XSS | Remove `\|safe`; auto-escape output; add CSP (`script-src 'self'`) |
 | CSRF | Use CSRF tokens (e.g. Flask-WTF); set `SameSite=Strict` on session cookies |
 | SQL Injection | Parameterized queries: `cursor.execute("... WHERE username = ?", (username,))` |
-| IDOR | Enforce ownership: verify `session.user` matches the record's `employee_id` |
+| PII access codes | Store codes outside the DB (HSM/vault); never selectable via user-facing queries; use rate limiting on code entry |
 | Clickjacking | Add `X-Frame-Options: DENY` or `Content-Security-Policy: frame-ancestors 'none'` |
 
 ---
@@ -301,7 +297,7 @@ The template includes:
 | **Test Environment** | Lab diagram, host IPs, accounts used |
 | **Attack Chain Summary** | Narrative kill chain (guest → admin → data breach) |
 | **Findings Summary** | Table with CVSS scores and OWASP Top 10:2025 mapping |
-| **Detailed Findings (×5)** | Pre-filled for FakeCompany: XSS, CSRF, clickjacking, SQLi, IDOR |
+| **Detailed Findings (×5)** | Pre-filled for FakeCompany: XSS, CSRF, clickjacking, SQLi, PII code exposure |
 | **Per-finding blocks** | Description, discovery steps, Burp PoC, impact, CVSS justification, remediation |
 | **Remediation Roadmap** | Prioritized fix schedule |
 | **Appendices** | Screenshot index, Burp logs, tool versions |

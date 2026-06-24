@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block title %}HR File — {{ employee.name }}{% endblock %}
+
+{% block content %}
+<section class="page-header">
+    <a href="{{ url_for('admin') }}" class="back-link">&larr; Admin dashboard</a>
+    {% if employee %}
+    <p class="eyebrow">HR Personnel File</p>
+    <h1>{{ employee.name }}</h1>
+    <p class="page-lead">Employee ID #{{ employee.id }} · General contact information</p>
+    {% else %}
+    <h1>Record not found</h1>
+    {% endif %}
+</section>
+
+{% if employee and record %}
+<section class="section">
+    <div class="profile-card">
+        <h2>Contact &amp; workplace</h2>
+        <p class="page-lead">Non-sensitive fields available to portal administrators.</p>
+        <dl class="detail-list detail-list-wide">
+            <div>
+                <dt>Work phone</dt>
+                <dd>{{ record.phone }}</dd>
+            </div>
+            <div>
+                <dt>Office extension</dt>
+                <dd>{{ record.office_extension }}</dd>
+            </div>
+            <div>
+                <dt>Department</dt>
+                <dd>{{ employee.department }}</dd>
+            </div>
+            <div>
+                <dt>Work email</dt>
+                <dd>{{ employee.email }}</dd>
+            </div>
+        </dl>
+    </div>
+
+    {% if pii_unlocked %}
+    <div class="profile-card profile-card-sensitive">
+        <div class="sensitive-banner">
+            <span>🔒</span> PII section unlocked with HR access code.
+        </div>
+        <h2>Confidential personnel data</h2>
+        <dl class="detail-list detail-list-wide">
+            <div>
+                <dt>Annual salary</dt>
+                <dd class="mono">{{ record.salary }}</dd>
+            </div>
+            <div>
+                <dt>Social Security Number</dt>
+                <dd class="mono">{{ record.ssn }}</dd>
+            </div>
+            <div>
+                <dt>Home address</dt>
+                <dd>{{ record.personal_address }}</dd>
+            </div>
+            <div>
+                <dt>Internal notes</dt>
+                <dd class="notes-block">{{ record.internal_notes }}</dd>
+            </div>
+        </dl>
+    </div>
+    {% else %}
+    <div class="form-card form-card-narrow">
+        <h2>PII access verification</h2>
+        <p class="page-lead">
+            Salary, SSN, and internal HR notes require a departmental access code.
+            Only HR staff are issued these codes.
+        </p>
+        <form method="POST" class="stack-form">
+            <div class="form-group">
+                <label for="access_code">HR PII access code</label>
+                <input type="text" id="access_code" name="access_code" placeholder="PII-XX-XXXX" required>
+            </div>
+            <button type="submit" class="btn btn-primary">Unlock confidential section</button>
+        </form>
+    </div>
+    {% endif %}
+</section>
+{% elif employee %}
+<section class="section">
+    <div class="empty-state">No HR record found for this employee.</div>
+</section>
+{% endif %}
+{% endblock %}

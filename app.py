@@ -80,6 +80,9 @@ def init_db():
 
         CREATE TABLE IF NOT EXISTS hr_records (
             employee_id INTEGER PRIMARY KEY,
+            phone TEXT,
+            office_extension TEXT,
+            pii_access_code TEXT,
             salary TEXT,
             ssn TEXT,
             internal_notes TEXT,
@@ -90,6 +93,9 @@ def init_db():
 
     _ensure_column(cursor, "users", "email", "TEXT")
     _ensure_column(cursor, "users", "employee_id", "INTEGER")
+    _ensure_column(cursor, "hr_records", "phone", "TEXT")
+    _ensure_column(cursor, "hr_records", "office_extension", "TEXT")
+    _ensure_column(cursor, "hr_records", "pii_access_code", "TEXT")
     db.commit()
 
     seed_users = [
@@ -122,18 +128,29 @@ def init_db():
             )
 
     seed_hr = [
-        (1, "$94,500", "482-91-7734", "Completed SOC2 audit Q3. VPN access: tier-2.", "14 Oak Street, Suite 4B"),
-        (2, "$112,000", "591-22-8841", "Domain admin credentials in KeePass vault srv-01.", "88 River Road, Apt 12"),
-        (3, "$87,200", "403-55-9920", "Pending background check for contractor batch #7.", "3 Maple Lane"),
+        (1, "+1-555-0142", "ext. 401", "PII-D1-7F3A", "$94,500", "482-91-7734", "Completed SOC2 audit Q3. VPN access: tier-2.", "14 Oak Street, Suite 4B"),
+        (2, "+1-555-0187", "ext. 512", "PII-A2-9B2C", "$112,000", "591-22-8841", "Domain admin credentials in KeePass vault srv-01.", "88 River Road, Apt 12"),
+        (3, "+1-555-0199", "ext. 305", "PII-M3-4E8D", "$87,200", "403-55-9920", "Pending background check for contractor batch #7.", "3 Maple Lane"),
     ]
     for record in seed_hr:
         cursor.execute(
             """
             INSERT OR IGNORE INTO hr_records
-            (employee_id, salary, ssn, internal_notes, personal_address)
-            VALUES (?, ?, ?, ?, ?)
+            (employee_id, phone, office_extension, pii_access_code, salary, ssn, internal_notes, personal_address)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             record,
+        )
+
+    for employee_id, phone, ext, code, salary, ssn, notes, address in seed_hr:
+        cursor.execute(
+            """
+            UPDATE hr_records
+            SET phone = ?, office_extension = ?, pii_access_code = ?,
+                salary = ?, ssn = ?, internal_notes = ?, personal_address = ?
+            WHERE employee_id = ?
+            """,
+            (phone, ext, code, salary, ssn, notes, address, employee_id),
         )
 
     db.commit()
@@ -234,18 +251,37 @@ def profile(employee_id):
     return render_template("profile.html", employee=employee)
 
 
-@app.route("/hr/record/<int:employee_id>")
-@login_required
-def hr_record(employee_id):
+@app.route("/admin/hr/<int:employee_id>", methods=["GET", "POST"])
+@admin_required
+def admin_hr_record(employee_id):
     record = get_db().execute(
         """
-        SELECT employee_id, salary, ssn, internal_notes, personal_address
+        SELECT employee_id, phone, office_extension, pii_access_code,
+               salary, ssn, internal_notes, personal_address
         FROM hr_records WHERE employee_id = ?
         """,
         (employee_id,),
     ).fetchone()
     employee = next((e for e in PUBLIC_EMPLOYEES if e["id"] == employee_id), None)
-    return render_template("hr_record.html", employee=employee, record=record)
+
+    unlock_key = f"pii_unlocked_{employee_id}"
+    pii_unlocked = session.get(unlock_key, False)
+
+    if request.method == "POST" and record:
+        submitted = request.form.get("access_code", "").strip()
+        if submitted == record["pii_access_code"]:
+            session[unlock_key] = True
+            pii_unlocked = True
+            flash("PII section unlocked.", "success")
+        else:
+            flash("Invalid HR access code.", "error")
+
+    return render_template(
+        "admin_hr_record.html",
+        employee=employee,
+        record=record,
+        pii_unlocked=pii_unlocked,
+    )
 
 
 @app.route("/contact", methods=["GET", "POST"])
@@ -273,7 +309,7 @@ def contact():
 @admin_required
 def admin():
     unread = get_db().execute("SELECT COUNT(*) AS count FROM contact_messages").fetchone()["count"]
-    return render_template("admin.html", unread_count=unread)
+    return render_template("admin.html", unread_count=unread, employees=PUBLIC_EMPLOYEES)
 
 
 @app.route("/admin/search", methods=["GET", "POST"])

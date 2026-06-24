@@ -20,9 +20,6 @@
             <p class="employee-email">{{ employee.email }}</p>
             <div class="card-actions">
                 <a href="{{ url_for('profile', employee_id=employee.id) }}" class="btn btn-secondary btn-sm">Public profile</a>
-                {% if current_user.role == 'admin' or (current_user.role == 'employee' and current_user.employee_id == employee.id) %}
-                <a href="{{ url_for('hr_record', employee_id=employee.id) }}" class="btn btn-ghost btn-sm">HR record</a>
-                {% endif %}
             </div>
         </article>
         {% endfor %}
