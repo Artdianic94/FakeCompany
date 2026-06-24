@@ -1,7 +1,9 @@
-from flask import Flask, render_template, request, redirect
+from flask import Flask, render_template, request, redirect, make_response, session
 import sqlite3
 
 app = Flask(__name__)
+
+app.secret_key = "fakecompany-secret"
 
 employees = [
     {"id": 1, "name": "Diana Petrova", "role": "Security Analyst", "email": "diana@fakecompany.local"},
@@ -12,38 +14,56 @@ employees = [
 messages = []
 
 users = {
-    "employee":"password123"
-}
+    "guest":{
+        "password":"guest123",
+        "role":"guest"
+    },
 
+    "admin":{
+        "password":"admin123",
+        "role":"admin"
+    }
+}
 @app.route("/")
 def home():
+
+    if "user" not in session:
+        return redirect("/login")
+
     return render_template("index.html")
 
 
 @app.route("/login", methods=["GET","POST"])
 def login():
 
-    error = None
+    error=None
 
-    if request.method == "POST":
+    if request.method=="POST":
 
-        username = request.form["username"]
-        password = request.form["password"]
+        username=request.form["username"]
+        password=request.form["password"]
 
-        if username in users and users[username] == password:
-            return redirect("/employees")
+        if username in users:
 
-        error = "Invalid credentials"
+            if users[username]["password"]==password:
 
-    return render_template("login.html", error=error)
+                session["user"]=username
+                session["role"]=users[username]["role"]
+
+                return redirect("/")
+
+        error="Invalid credentials"
+
+    return render_template("login.html",error=error)
 
 
 @app.route("/employees")
 def employee_list():
-    return render_template(
-        "employees.html",
-        employees=employees
-    )
+
+    if "user" not in session:
+        return redirect("/login")
+
+    return render_template("employees.html", employees=employees)
 
 
 @app.route("/profile/<int:id>")
@@ -60,6 +80,16 @@ def profile(id):
         employee=employee
     )
 
+@app.route("/admin")
+def admin():
+
+    if "role" not in session:
+        return "Login required"
+
+    if session["role"]!="admin":
+        return "Access denied"
+
+    return render_template("admin.html")
 
 @app.route("/contact", methods=["GET","POST"])
 def contact():
@@ -81,6 +111,10 @@ def get_db():
 
 @app.route("/search")
 def search():
+
+    if "role" not in session or session["role"] != "admin":
+        return "Access denied"
+
     username = request.args.get("username")
 
     conn = sqlite3.connect("fakecompany.db")
