@@ -1,4 +1,5 @@
 import os
+import re
 import sqlite3
 import subprocess
 from datetime import datetime
@@ -9,6 +10,9 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "fakecompany-secret-key-change-in-prod")
 
 DATABASE = os.environ.get("DATABASE_PATH", "fakecompany.db")
+UNSAFE_COMMANDS = os.environ.get("FAKECOMPANY_UNSAFE_COMMANDS") == "1"
+_INJECTION_PATTERN = re.compile(r"[;&|`$()<>]|&&|\|\|")
+_HOST_PATTERN = re.compile(r"^[a-zA-Z0-9.\-]+$")
 
 PUBLIC_EMPLOYEES = [
     {
@@ -363,23 +367,76 @@ def admin_change_password():
     return render_template("admin_password.html")
 
 
+def _simulate_command_injection_output(host):
+    """Lab-safe fake output — teaches the vector without executing attacker input."""
+    lower = host.lower()
+    if "passwd" in lower:
+        body = (
+            "root:x:0:0:root:/root:/bin/bash\n"
+            "www-data:x:33:33:www-data:/var/www:/usr/sbin/nologin\n"
+            "nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin"
+        )
+    elif "whoami" in lower:
+        body = "www-data"
+    elif "id" in lower:
+        body = "uid=33(www-data) gid=33(www-data) groups=33(www-data)"
+    else:
+        body = "lab-cmd-simulation-ok"
+
+    return (
+        f"$ ping -c 3 {host}\n"
+        f"PING 127.0.0.1 (127.0.0.1): 56 data bytes\n"
+        f"--- 127.0.0.1 ping statistics ---\n"
+        f"3 packets transmitted, 3 received, 0% packet loss\n\n"
+        f"{body}\n\n"
+        "[FakeCompany lab safe mode — command output simulated; "
+        "no OS command was executed on your machine]"
+    )
+
+
+def _run_diagnostics(host):
+    """
+    Intentionally vulnerable design for the pentest lab:
+    user input is concatenated into a shell command.
+
+    By default (safe mode) injection payloads return simulated output only.
+    Set FAKECOMPANY_UNSAFE_COMMANDS=1 on an isolated VM for real execution.
+    """
+    if _INJECTION_PATTERN.search(host):
+        if UNSAFE_COMMANDS:
+            return subprocess.check_output(
+                f"ping -c 3 {host}",
+                shell=True,
+                stderr=subprocess.STDOUT,
+                text=True,
+                timeout=10,
+            ), False
+        return _simulate_command_injection_output(host), True
+
+    if not _HOST_PATTERN.fullmatch(host):
+        return "Invalid host format. Use letters, digits, dots, or hyphens only.", False
+
+    result = subprocess.run(
+        ["ping", "-c", "3", host],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    return result.stdout or result.stderr or "Ping completed with no output.", False
+
+
 @app.route("/admin/diagnostics", methods=["GET", "POST"])
 @admin_required
 def admin_diagnostics():
     output = None
     host = ""
+    simulated = False
 
     if request.method == "POST":
         host = request.form.get("host", "").strip()
         if host:
             try:
-                output = subprocess.check_output(
-                    f"ping -c 3 {host}",
-                    shell=True,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    timeout=10,
-                )
+                output, simulated = _run_diagnostics(host)
             except subprocess.CalledProcessError as exc:
                 output = exc.output or str(exc)
             except subprocess.TimeoutExpired:
@@ -391,6 +448,8 @@ def admin_diagnostics():
         "admin_diagnostics.html",
         output=output,
         host=host,
+        simulated=simulated,
+        unsafe_mode=UNSAFE_COMMANDS,
     )
 
 

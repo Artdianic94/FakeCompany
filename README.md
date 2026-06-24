@@ -6,6 +6,8 @@ Use it to practice finding vulnerabilities manually (Burp Suite, browser dev too
 
 > **Warning:** This application is intentionally insecure. Deploy only in isolated lab environments (virtual machines). Never expose it to the public internet.
 
+**Command injection safety:** By default, Network Diagnostics runs in **lab safe mode** — payloads like `127.0.0.1; id` return **simulated** output and do **not** execute OS commands on your machine. On a dedicated isolated target VM you may set `FAKECOMPANY_UNSAFE_COMMANDS=1` for real execution during demos.
+
 ---
 
 ## What This Application Is For
@@ -180,7 +182,7 @@ Command Injection on /admin/diagnostics → OS commands as www-data (server comp
 | **Client** | 1 | Stored XSS | `/contact` |
 | **Client** | 2 | CSRF (triggered via XSS) | `/admin/settings/password` |
 | **Server** | 1 | SQL Injection | `/admin/search` → HR access codes from DB |
-| **Server** | 2 | OS Command Injection | `/admin/diagnostics` → shell via `ping` |
+| **Server** | 2 | OS Command Injection | `/admin/diagnostics` — shell metacharacters in `host` (simulated by default) |
 
 Optional bonus: **Clickjacking** — `static/poc/clickjacking.html` (missing `X-Frame-Options`).
 
@@ -263,9 +265,9 @@ Navigate to **Admin → Network Diagnostics** (`/admin/diagnostics`). The form r
 127.0.0.1 | whoami
 ```
 
-The output panel shows results of arbitrary OS commands executed as the web server user (`www-data` on the target VM).
+The output panel shows results consistent with OS command execution (e.g. `uid=www-data`). In default **lab safe mode**, output is **simulated** — the vulnerable pattern exists in the application design, but no real shell command runs on your host. For an isolated target VM demo, set `FAKECOMPANY_UNSAFE_COMMANDS=1`.
 
-**Why this fits the chain:** SQLi steals **database secrets** (HR codes → PII). Command injection moves from data breach to **server-level compromise** — a natural post-exploitation step once admin access is obtained. Each server-side vector has a distinct purpose; neither replaces the other.
+**Why this fits the chain:** SQLi steals **database secrets** (HR codes → PII). Command injection demonstrates **server-level compromise** — the natural post-exploitation step once admin access is obtained.
 
 ---
 

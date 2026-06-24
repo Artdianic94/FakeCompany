@@ -486,13 +486,13 @@ cursor.execute(
 
 #### Description
 
-The Network Diagnostics feature at `/admin/diagnostics` passes user-supplied host values directly into a shell command (`ping -c 3 {host}` with `shell=True`). An attacker with admin access can inject shell metacharacters to execute arbitrary OS commands on the portal server.
+The Network Diagnostics feature at `/admin/diagnostics` is designed with a command injection flaw: user input is concatenated into `ping -c 3 {host}` with `shell=True`. By default the lab runs in **safe mode** and returns simulated output for injection payloads without executing OS commands. The vulnerability class, discovery steps, and PoC methodology remain valid for the report.
 
 #### Location
 
 - **Endpoint:** `POST /admin/diagnostics`
 - **Parameter:** `host`
-- **Vulnerable pattern:** `subprocess.check_output(f"ping -c 3 {host}", shell=True)`
+- **Vulnerable pattern:** `f"ping -c 3 {host}"` with `shell=True` (active only when `FAKECOMPANY_UNSAFE_COMMANDS=1`)
 
 #### How It Was Found
 
@@ -522,7 +522,7 @@ host=127.0.0.1;+id
 
 #### Impact
 
-Full OS command execution as the web server user. Escalates the chain from application-layer PII breach to infrastructure compromise.
+Full OS command execution as the web server user when unsafe mode is enabled. Even in simulated mode, the flaw proves missing input validation and unsafe shell invocation in the code path — a critical finding requiring remediation before any production use.
 
 #### Remediation
 

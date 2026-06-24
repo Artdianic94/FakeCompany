@@ -8,6 +8,12 @@
     <p class="eyebrow">IT Operations</p>
     <h1>Network Diagnostics</h1>
     <p class="page-lead">Ping internal or external hosts to verify connectivity from the portal server.</p>
+    {% if not unsafe_mode %}
+    <p class="page-lead" style="color: var(--text-muted); font-size: 0.9rem;">
+        Lab safe mode is on — injection payloads return <strong>simulated</strong> output only.
+        For a real isolated VM lab, set <code>FAKECOMPANY_UNSAFE_COMMANDS=1</code>.
+    </p>
+    {% endif %}
 </section>
 
 <section class="section">
