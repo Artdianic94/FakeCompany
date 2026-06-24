@@ -12,7 +12,7 @@ app.secret_key = os.environ.get("SECRET_KEY", "fakecompany-secret-key-change-in-
 DATABASE = os.environ.get("DATABASE_PATH", "fakecompany.db")
 UNSAFE_COMMANDS = os.environ.get("FAKECOMPANY_UNSAFE_COMMANDS") == "1"
 _INJECTION_PATTERN = re.compile(r"[;&|`$()<>]|&&|\|\|")
-_HOST_PATTERN = re.compile(r"^[a-zA-Z0-9.\-]+$")
+_REPORT_LABEL_PATTERN = re.compile(r"^[a-zA-Z0-9._\-]+$")
 
 PUBLIC_EMPLOYEES = [
     {
@@ -367,9 +367,9 @@ def admin_change_password():
     return render_template("admin_password.html")
 
 
-def _simulate_command_injection_output(host):
+def _simulate_command_injection_output(report_label, employee_name):
     """Lab-safe fake output — teaches the vector without executing attacker input."""
-    lower = host.lower()
+    lower = report_label.lower()
     if "passwd" in lower:
         body = (
             "root:x:0:0:root:/root:/bin/bash\n"
@@ -384,71 +384,76 @@ def _simulate_command_injection_output(host):
         body = "lab-cmd-simulation-ok"
 
     return (
-        f"$ ping -c 3 {host}\n"
-        f"PING 127.0.0.1 (127.0.0.1): 56 data bytes\n"
-        f"--- 127.0.0.1 ping statistics ---\n"
-        f"3 packets transmitted, 3 received, 0% packet loss\n\n"
+        f"$ hr-export --employee \"{employee_name}\" --label {report_label}\n"
+        f"Generating personnel summary for compliance archive...\n"
+        f"Output: /var/reports/hr_export_{report_label}.pdf\n\n"
         f"{body}\n\n"
         "[FakeCompany lab safe mode — command output simulated; "
         "no OS command was executed on your machine]"
     )
 
 
-def _run_diagnostics(host):
+def _run_hr_report_export(report_label, employee_name):
     """
-    Intentionally vulnerable design for the pentest lab:
-    user input is concatenated into a shell command.
-
-    By default (safe mode) injection payloads return simulated output only.
-    Set FAKECOMPANY_UNSAFE_COMMANDS=1 on an isolated VM for real execution.
+    Legacy HR export script — report label is passed to a shell command.
+    Safe mode simulates injection output; set FAKECOMPANY_UNSAFE_COMMANDS=1 on isolated VMs only.
     """
-    if _INJECTION_PATTERN.search(host):
+    if _INJECTION_PATTERN.search(report_label):
         if UNSAFE_COMMANDS:
             return subprocess.check_output(
-                f"ping -c 3 {host}",
+                f"sh -c 'echo HR report > /tmp/hr_export_{report_label}.txt'",
                 shell=True,
                 stderr=subprocess.STDOUT,
                 text=True,
                 timeout=10,
             ), False
-        return _simulate_command_injection_output(host), True
+        return _simulate_command_injection_output(report_label, employee_name), True
 
-    if not _HOST_PATTERN.fullmatch(host):
-        return "Invalid host format. Use letters, digits, dots, or hyphens only.", False
+    if not _REPORT_LABEL_PATTERN.fullmatch(report_label):
+        return (
+            "Invalid report label. Use letters, digits, underscores, dots, or hyphens only.",
+            False,
+        )
 
-    result = subprocess.run(
-        ["ping", "-c", "3", host],
-        capture_output=True,
-        text=True,
-        timeout=10,
+    return (
+        f"Personnel report generated successfully.\n"
+        f"Employee: {employee_name}\n"
+        f"Reference: {report_label}\n"
+        f"Archive path: /var/reports/hr_export_{report_label}.pdf",
+        False,
     )
-    return result.stdout or result.stderr or "Ping completed with no output.", False
 
 
-@app.route("/admin/diagnostics", methods=["GET", "POST"])
+@app.route("/admin/reports/export", methods=["GET", "POST"])
 @admin_required
-def admin_diagnostics():
+def admin_report_export():
     output = None
-    host = ""
-    simulated = False
+    report_label = ""
+    employee_id = request.values.get("employee_id", "1")
 
     if request.method == "POST":
-        host = request.form.get("host", "").strip()
-        if host:
+        report_label = request.form.get("report_label", "").strip()
+        employee_id = request.form.get("employee_id", "1")
+        employee = next(
+            (e for e in PUBLIC_EMPLOYEES if str(e["id"]) == str(employee_id)),
+            PUBLIC_EMPLOYEES[0],
+        )
+        if report_label:
             try:
-                output, simulated = _run_diagnostics(host)
+                output, _simulated = _run_hr_report_export(report_label, employee["name"])
             except subprocess.CalledProcessError as exc:
                 output = exc.output or str(exc)
             except subprocess.TimeoutExpired:
-                output = "Diagnostic command timed out."
+                output = "Report generation timed out."
             except OSError as exc:
                 output = str(exc)
 
     return render_template(
-        "admin_diagnostics.html",
+        "admin_report_export.html",
         output=output,
-        host=host,
-        simulated=simulated,
+        report_label=report_label,
+        employee_id=str(employee_id),
+        employees=PUBLIC_EMPLOYEES,
         unsafe_mode=UNSAFE_COMMANDS,
     )
 

@@ -124,7 +124,7 @@ Testing aligned with **OWASP WSTG** phases:
 
 `[Narrative paragraph describing the full kill chain — this is what elevates the report above isolated findings.]`
 
-Starting with a **guest** account, the tester submitted stored XSS to the feedback form. When the administrator reviewed messages, the script changed the admin password (CSRF). After authenticating as admin, the tester used **SQL injection** to extract HR PII access codes and unlocked confidential personnel records. The tester then exploited **OS command injection** in Network Diagnostics to execute arbitrary commands on the server — escalating from application data breach to host compromise.
+Starting with a **guest** account, the tester submitted stored XSS to the feedback form. When the administrator reviewed messages, the script changed the admin password (CSRF). After authenticating as admin, the tester used **SQL injection** to extract HR PII access codes and unlocked confidential personnel records. The tester then exploited **OS command injection** in the HR Report Export feature to execute arbitrary commands on the server — escalating from application data breach to host compromise.
 
 ```
 Guest account
@@ -143,7 +143,7 @@ SQL Injection → extract pii_access_code from hr_records
       ↓
 Enter code on HR file → salary, SSN, internal notes
       ↓
-Command Injection on /admin/diagnostics → OS-level access
+Command Injection on /admin/reports/export → OS-level access
 ```
 
 ---
@@ -156,7 +156,7 @@ Command Injection on /admin/diagnostics → OS-level access
 | F-02 | Cross-Site Request Forgery (CSRF) on Password Change | High | `[8.1]` | A01 Broken Access Control | Client-side |
 | F-03 | Clickjacking — Missing Frame Protection | Medium | `[4.3]` | A01 Broken Access Control | Client-side |
 | F-04 | SQL Injection in Account Lookup | Critical | `[9.8]` | A03 Injection | Server-side |
-| F-05 | OS Command Injection in Network Diagnostics | Critical | `[9.1]` | A03 Injection | Server-side |
+| F-05 | OS Command Injection in HR Report Export | Critical | `[9.1]` | A03 Injection | Server-side |
 
 > Adjust CVSS scores after calculating with the [FIRST CVSS v3.1 Calculator](https://www.first.org/cvss/calculator/3.1).
 
@@ -474,7 +474,7 @@ cursor.execute(
 
 ---
 
-### F-05 — OS Command Injection in Network Diagnostics
+### F-05 — OS Command Injection in HR Report Export
 
 | Field | Value |
 |-------|-------|
@@ -486,56 +486,48 @@ cursor.execute(
 
 #### Description
 
-The Network Diagnostics feature at `/admin/diagnostics` is designed with a command injection flaw: user input is concatenated into `ping -c 3 {host}` with `shell=True`. By default the lab runs in **safe mode** and returns simulated output for injection payloads without executing OS commands. The vulnerability class, discovery steps, and PoC methodology remain valid for the report.
+The HR Report Export feature at `/admin/reports/export` generates personnel summary PDFs for compliance archives. The **report reference label** field is concatenated into a legacy shell export command (`sh -c 'echo HR report > /tmp/hr_export_{label}.txt'`). By default the lab runs in **safe mode** and returns simulated output for injection payloads.
 
 #### Location
 
-- **Endpoint:** `POST /admin/diagnostics`
-- **Parameter:** `host`
-- **Vulnerable pattern:** `f"ping -c 3 {host}"` with `shell=True` (active only when `FAKECOMPANY_UNSAFE_COMMANDS=1`)
+- **Endpoint:** `POST /admin/reports/export`
+- **Parameter:** `report_label`
+- **Vulnerable pattern:** `f"... hr_export_{report_label}.txt'"` with `shell=True`
 
 #### How It Was Found
 
-1. After admin account takeover, explored the admin dashboard (WSTG-INPV-12)
-2. Opened **Network Diagnostics** — form accepts IP/hostname for ping test
-3. Submitted `127.0.0.1; id` — output included `uid=` from the `id` command
-4. Confirmed with `127.0.0.1 && cat /etc/passwd`
+1. After admin takeover and PII extraction, explored admin HR tools (WSTG-INPV-12)
+2. Opened **Export HR Report** — internal reference label for archived PDF
+3. Submitted `alex_2026; id` — export log included `uid=33(www-data)`
+4. Confirmed with `compliance_q1 && whoami`
 
 #### Proof of Concept
 
 ```
-127.0.0.1; id
-127.0.0.1 && cat /etc/passwd
-127.0.0.1 | whoami
+alex_2026; id
+compliance_q1 && cat /etc/passwd
 ```
 
 ```http
-POST /admin/diagnostics HTTP/1.1
+POST /admin/reports/export HTTP/1.1
 Host: [TARGET_VM_IP]
 Cookie: session=[ADMIN_SESSION]
 Content-Type: application/x-www-form-urlencoded
 
-host=127.0.0.1;+id
+employee_id=2&report_label=alex_2026;+id
 ```
 
-`[Screenshot: diagnostics output showing uid=www-data from injected id command]`
+`[Screenshot: export log showing uid=www-data after injected id command]`
 
 #### Impact
 
-Full OS command execution as the web server user when unsafe mode is enabled. Even in simulated mode, the flaw proves missing input validation and unsafe shell invocation in the code path — a critical finding requiring remediation before any production use.
+Full OS command execution as the web server user when unsafe mode is enabled. Demonstrates escalation from HR data breach to host compromise via a realistic admin workflow.
 
 #### Remediation
 
-```python
-# Fixed — no shell, strict validation
-import re
-if not re.fullmatch(r"[a-zA-Z0-9.\-]+", host):
-    abort(400)
-subprocess.run(["ping", "-c", "3", host], capture_output=True, text=True, timeout=10)
-```
-
-- Never use `shell=True` with user input
-- Allowlist valid hostname/IP characters
+- Never pass user input to `shell=True`
+- Use safe file APIs: `Path("/var/reports") / f"{sanitize(label)}.pdf"`
+- Replace legacy shell scripts with in-process PDF libraries
 
 ---
 
@@ -576,7 +568,7 @@ The FakeCompany portal demonstrates how individually "medium" vulnerabilities co
 | Fig. 2 | Stored XSS payload submission | F-01 |
 | Fig. 3 | Admin password changed via XSS | F-02 |
 | Fig. 4 | SQLi — UNION extract of PII access codes | F-04 |
-| Fig. 5 | Command injection — id output in diagnostics | F-05 |
+| Fig. 5 | Command injection — id in HR report export log | F-05 |
 
 ### Appendix C — CVSS Calculator Screenshots
 

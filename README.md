@@ -6,7 +6,7 @@ Use it to practice finding vulnerabilities manually (Burp Suite, browser dev too
 
 > **Warning:** This application is intentionally insecure. Deploy only in isolated lab environments (virtual machines). Never expose it to the public internet.
 
-**Command injection safety:** By default, Network Diagnostics runs in **lab safe mode** — payloads like `127.0.0.1; id` return **simulated** output and do **not** execute OS commands on your machine. On a dedicated isolated target VM you may set `FAKECOMPANY_UNSAFE_COMMANDS=1` for real execution during demos.
+**Command injection safety:** By default, HR Report Export runs in **lab safe mode** — payloads like `alex_2026; id` return **simulated** output and do **not** execute OS commands on your machine. On a dedicated isolated target VM you may set `FAKECOMPANY_UNSAFE_COMMANDS=1` for real execution during demos.
 
 ---
 
@@ -172,7 +172,7 @@ SQL Injection on /admin/search → extract pii_access_code from hr_records
       ↓
 Enter code on HR file → salary, SSN, internal notes (application-layer breach)
       ↓
-Command Injection on /admin/diagnostics → OS commands as www-data (server compromise)
+Command Injection on /admin/reports/export → OS commands as www-data (server compromise)
 ```
 
 ### Minimum findings (2 + 2)
@@ -182,7 +182,7 @@ Command Injection on /admin/diagnostics → OS commands as www-data (server comp
 | **Client** | 1 | Stored XSS | `/contact` |
 | **Client** | 2 | CSRF (triggered via XSS) | `/admin/settings/password` |
 | **Server** | 1 | SQL Injection | `/admin/search` → HR access codes from DB |
-| **Server** | 2 | OS Command Injection | `/admin/diagnostics` — shell metacharacters in `host` (simulated by default) |
+| **Server** | 2 | OS Command Injection | `/admin/reports/export` — shell metacharacters in `report_label` |
 
 Optional bonus: **Clickjacking** — `static/poc/clickjacking.html` (missing `X-Frame-Options`).
 
@@ -249,25 +249,25 @@ At this point the attacker has breached **application data**. The next step esca
 
 ### Step 7 — OS Command Injection (server compromise)
 
-Navigate to **Admin → Network Diagnostics** (`/admin/diagnostics`). The form runs `ping` against a user-supplied host — input is passed to a shell without sanitization.
+Navigate to **Admin → Export HR Report** (`/admin/reports/export`). HR admins use this to archive personnel PDFs — the **report reference label** is passed to a legacy shell export script without sanitization.
 
-**Proof of concept:**
-
-```
-127.0.0.1; id
-```
+1. Select an employee (e.g. Alex Ivanov)
+2. In **Report reference label**, enter:
 
 ```
-127.0.0.1 && cat /etc/passwd
+alex_2026; id
 ```
 
+Other PoC variants:
+
 ```
-127.0.0.1 | whoami
+compliance_q1 && whoami
+onboarding; cat /etc/passwd
 ```
 
-The output panel shows results consistent with OS command execution (e.g. `uid=www-data`). In default **lab safe mode**, output is **simulated** — the vulnerable pattern exists in the application design, but no real shell command runs on your host. For an isolated target VM demo, set `FAKECOMPANY_UNSAFE_COMMANDS=1`.
+The **Export log** panel shows output consistent with OS command execution (e.g. `uid=33(www-data)`). In default **lab safe mode**, output is simulated — no real shell command runs on your host.
 
-**Why this fits the chain:** SQLi steals **database secrets** (HR codes → PII). Command injection demonstrates **server-level compromise** — the natural post-exploitation step once admin access is obtained.
+**Why this fits the chain:** After stealing PII via SQLi, command injection escalates from **HR data breach** to **server compromise** — a realistic post-exploitation step in internal HR portals that use shell scripts for report generation.
 
 ---
 
@@ -279,7 +279,7 @@ The output panel shows results consistent with OS command execution (e.g. `uid=w
 | **CSRF** (via XSS) | `/admin/settings/password` — no anti-CSRF token | A01 — Broken Access Control |
 | **Clickjacking** | Missing `X-Frame-Options` / CSP `frame-ancestors` | A01 — Broken Access Control |
 | **SQL Injection** | `/admin/search` — string concatenation in query | A03 — Injection |
-| **Command Injection** | `/admin/diagnostics` — unsanitized input in `shell=True` | A03 — Injection |
+| **Command Injection** | `/admin/reports/export` — `report_label` in shell command | A03 — Injection |
 
 **Optional — Clickjacking:** `static/poc/clickjacking.html` (missing `X-Frame-Options`).
 
@@ -296,7 +296,7 @@ The output panel shows results consistent with OS command execution (e.g. `uid=w
 | `/contact` | Public | Feedback form (**stored XSS**) |
 | `/admin` | Admin | Dashboard + employee HR file links |
 | `/admin/hr/<id>` | Admin | HR file (contact info + PII code gate) |
-| `/admin/diagnostics` | Admin | Network ping tool (**command injection**) |
+| `/admin/reports/export` | Admin | HR report export (**command injection**) |
 | `/admin/search` | Admin | Account lookup (**SQLi** on `username`) |
 | `/admin/settings/password` | Admin | Password change (**CSRF**) |
 

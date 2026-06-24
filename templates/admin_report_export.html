@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}Export HR Report{% endblock %}
+
+{% block content %}
+<section class="page-header">
+    <a href="{{ url_for('admin') }}" class="back-link">&larr; Admin dashboard</a>
+    <p class="eyebrow">HR Compliance</p>
+    <h1>Export Personnel Report</h1>
+    <p class="page-lead">
+        Generate a personnel summary PDF for internal audit, onboarding records, or compliance archive.
+    </p>
+    {% if not unsafe_mode %}
+    <p class="page-lead" style="color: var(--text-muted); font-size: 0.9rem;">
+        Lab safe mode — injection payloads return <strong>simulated</strong> output only.
+        Set <code>FAKECOMPANY_UNSAFE_COMMANDS=1</code> only on an isolated VM.
+    </p>
+    {% endif %}
+</section>
+
+<section class="section">
+    <div class="form-card form-card-narrow">
+        <form method="POST" class="stack-form">
+            <div class="form-group">
+                <label for="employee_id">Employee</label>
+                <select id="employee_id" name="employee_id" required>
+                    {% for employee in employees %}
+                    <option value="{{ employee.id }}" {% if employee_id == employee.id|string %}selected{% endif %}>
+                        {{ employee.name }} — {{ employee.role }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="report_label">Report reference label</label>
+                <input type="text" id="report_label" name="report_label" value="{{ report_label }}"
+                       placeholder="alex_ivanov_2026_q1" required>
+                <small style="color: var(--text-muted);">Internal filename reference for the archived PDF.</small>
+            </div>
+            <button type="submit" class="btn btn-primary">Generate report</button>
+        </form>
+    </div>
+
+    {% if output is not none %}
+    <div class="code-panel">
+        <span class="code-label">Export log</span>
+        <pre class="code-block">{{ output }}</pre>
+    </div>
+    {% endif %}
+</section>
+{% endblock %}
