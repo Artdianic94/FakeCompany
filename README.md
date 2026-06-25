@@ -315,29 +315,6 @@ The **Export log** panel shows output consistent with OS command execution (e.g.
 - **Firefox + Burp proxy** — demonstrate XSS and CSRF in the browser
 - **sqlmap** (optional) — compare automated vs. manual exploitation in your report
 
----
-
-## Report Template
-
-A full penetration test report skeleton is provided in **[REPORT_TEMPLATE.md](REPORT_TEMPLATE.md)**. Copy it into your thesis or lab deliverable and fill in the placeholders.
-
-The template includes:
-
-| Section | Contents |
-|---------|----------|
-| **Executive Summary** | Metrics, key risks, overall recommendation |
-| **Scope & Methodology** | WSTG-aligned test phases, tools, rules of engagement |
-| **Test Environment** | Lab diagram, host IPs, accounts used |
-| **Attack Chain Summary** | Narrative kill chain (guest → admin → data breach) |
-| **Findings Summary** | Table with CVSS scores and OWASP Top 10:2025 mapping |
-| **Detailed Findings (×4)** | Pre-filled: XSS, CSRF, SQLi, command injection |
-| **Per-finding blocks** | Description, discovery steps, Burp PoC, impact, CVSS justification, remediation |
-| **Remediation Roadmap** | Prioritized fix schedule |
-| **Appendices** | Screenshot index, Burp logs, tool versions |
-
-Each finding follows the format required for coursework: **where found → how found → PoC → CVSS → OWASP → remediation**.
-
----
 
 ## Project Structure
 
@@ -351,6 +328,12 @@ FakeCompany/
 │   └── css/style.css       # Portal styling
 └── templates/              # Jinja2 HTML templates
 ```
+
+---
+
+## Diploma presentation
+
+https://docs.google.com/presentation/d/1HRcke8bWqZahZrwTHba-Zr1B1_EdG8Lj/edit?usp=sharing&ouid=114891738034812103081&rtpof=true&sd=true
 
 ---
 
